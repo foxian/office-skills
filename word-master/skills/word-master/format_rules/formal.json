@@ -1,0 +1,27 @@
+{
+  "heading1": {
+    "font": "方正小标宋简体",
+    "size": "22pt",
+    "bold": true,
+    "alignment": "center",
+    "space_before": "0pt",
+    "space_after": "12pt"
+  },
+  "heading2": {
+    "font": "方正黑体简体",
+    "size": "16pt",
+    "bold": true,
+    "alignment": "left",
+    "space_before": "12pt",
+    "space_after": "6pt"
+  },
+  "body": {
+    "font": "仿宋",
+    "size": "16pt",
+    "line_spacing": 1.5,
+    "first_line_indent": "2em",
+    "alignment": "justify",
+    "space_before": "0pt",
+    "space_after": "6pt"
+  }
+}

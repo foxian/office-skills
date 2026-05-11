@@ -1,0 +1,27 @@
+{
+  "heading1": {
+    "font": "微软雅黑",
+    "size": "20pt",
+    "bold": true,
+    "alignment": "left",
+    "space_before": "12pt",
+    "space_after": "8pt"
+  },
+  "heading2": {
+    "font": "微软雅黑",
+    "size": "16pt",
+    "bold": true,
+    "alignment": "left",
+    "space_before": "10pt",
+    "space_after": "6pt"
+  },
+  "body": {
+    "font": "微软雅黑",
+    "size": "14pt",
+    "line_spacing": 1.5,
+    "first_line_indent": "2em",
+    "alignment": "left",
+    "space_before": "0pt",
+    "space_after": "6pt"
+  }
+}
