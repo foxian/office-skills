@@ -122,5 +122,39 @@ def compute_field_diff(block1: Optional[ParagraphBlock], block2: Optional[Paragr
 
     return DiffResult(type=change_type, original=block1, modified=block2, fields=fields)
 
+def format_diff_report(diff_results: List[DiffResult], original: str, modified: str, context: int = 1) -> str:
+    """Format diff results into Markdown report."""
+    lines = []
+    lines.append(f"# DOCX Diff Report")
+    lines.append(f"<!-- ORIGINAL: {original} -->")
+    lines.append(f"<!-- MODIFIED: {modified} -->")
+    lines.append("")
+    lines.append("## Paragraphs")
+    lines.append("")
+
+    for result in diff_results:
+        if result.type == 'same':
+            continue
+        elif result.type == 'new':
+            lines.append(f"### [新增] [p{result.modified.index}] {{{result.modified.style}}}")
+            lines.append(result.modified.text)
+            lines.append("")
+        elif result.type == 'deleted':
+            lines.append(f"### [删除] [p{result.original.index}] {{{result.original.style}}}")
+            lines.append(f"~~{result.original.text}~~")
+            lines.append("")
+        else:
+            # modified
+            lines.append(f"### [p{result.original.index}] {{{result.modified.style if result.modified else result.original.style}}}")
+            if result.fields:
+                lines.append("#### Fields")
+                lines.append("| Field | Original | Modified |")
+                lines.append("|-------|----------|----------|")
+                for f in result.fields:
+                    lines.append(f"| {f['name']} | {f.get('orig', '')} | {f.get('modif', '')} |")
+            lines.append("")
+
+    return "\n".join(lines)
+
 if __name__ == "__main__":
     print(generate_diff(sys.argv[1], sys.argv[2]))
