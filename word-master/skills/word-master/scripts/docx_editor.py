@@ -290,6 +290,50 @@ def _apply_insert_table(doc, params):
         print("[WARNING] op=insert_table: invalid target format or out of bounds, skipping.")
 
 
+def _apply_set_header_footer(doc, params):
+    sec_idx = params.get('section', 0)
+    try:
+        section = doc.sections[sec_idx]
+        even = params.get('even_page', False)
+        header_text = params.get('header')
+        footer_text = params.get('footer')
+        
+        target_header = section.even_page_header if even else section.header
+        target_footer = section.even_page_footer if even else section.footer
+        
+        if header_text is not None:
+            if not target_header.paragraphs:
+                target_header.add_paragraph()
+            target_header.paragraphs[0].text = header_text
+            
+        if footer_text is not None:
+            if not target_footer.paragraphs:
+                target_footer.add_paragraph()
+            target_footer.paragraphs[0].text = footer_text
+    except IndexError:
+        print("[WARNING] op=set_header_footer: section index out of bounds, skipping.")
+
+
+def _apply_insert_page_break(doc, params):
+    before_id, after_id = params.get('before'), params.get('after')
+    if (not before_id and not after_id) or (before_id and after_id):
+        print("[WARNING] op=insert_page_break: invalid parameters, skipping.")
+        return
+        
+    target_id = before_id or after_id
+    try:
+        idx = int(target_id.replace('p', ''))
+        anchor_p = doc.paragraphs[idx]
+        new_p = doc.add_paragraph()
+        new_p.add_run().add_break(docx.enum.text.WD_BREAK.PAGE)
+        if before_id:
+            anchor_p._p.addprevious(new_p._p)
+        else:
+            anchor_p._p.addnext(new_p._p)
+    except (ValueError, AttributeError, IndexError):
+        print("[WARNING] op=insert_page_break: invalid target format, skipping.")
+
+
 def _backup_file(filepath):
     """Create a .bak backup of the original file before modifying."""
     bak_path = filepath + '.bak'
@@ -342,6 +386,10 @@ def apply_operations(filepath, ops, outpath=None):
             _apply_insert_row(doc, op)
         elif op['op'] == 'insert_table':
             _apply_insert_table(doc, op)
+        elif op['op'] == 'set_header_footer':
+            _apply_set_header_footer(doc, op)
+        elif op['op'] == 'insert_page_break':
+            _apply_insert_page_break(doc, op)
 
     doc.save(outpath)
 
