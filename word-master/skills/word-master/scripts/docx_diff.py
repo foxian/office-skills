@@ -1,6 +1,16 @@
 import docx
 import sys
 import difflib
+from dataclasses import dataclass, field
+from typing import List, Optional
+
+@dataclass
+class ParagraphBlock:
+    index: int
+    text: str
+    style: str
+    overrides: List[str] = field(default_factory=list)
+    raw: str = ""  # Original markdown line
 
 def generate_diff(path1, path2):
     d1 = docx.Document(path1)
