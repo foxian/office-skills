@@ -115,3 +115,5 @@ if __name__ == "__main__":
     filepath = sys.argv[1]
     overview = "--overview" in sys.argv
     print(extract_rich_markdown(filepath, overview))
+
+__all__ = ['extract_rich_markdown', '_extract_style_props', '_extract_run_overrides']
