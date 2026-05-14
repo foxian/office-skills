@@ -86,5 +86,41 @@ def align_paragraphs(blocks1: List[ParagraphBlock], blocks2: List[ParagraphBlock
 
     return aligned
 
+@dataclass
+class DiffResult:
+    type: str  # 'same', 'content', 'format', 'new', 'deleted'
+    original: Optional[ParagraphBlock]
+    modified: Optional[ParagraphBlock]
+    fields: List[dict] = field(default_factory=list)
+
+def compute_field_diff(block1: Optional[ParagraphBlock], block2: Optional[ParagraphBlock]) -> DiffResult:
+    """Compute field-level differences between two paragraph blocks."""
+    if block1 is None and block2 is not None:
+        return DiffResult(type='new', original=None, modified=block2, fields=[])
+    if block1 is not None and block2 is None:
+        return DiffResult(type='deleted', original=block1, modified=None, fields=[])
+    if block1 is None and block2 is None:
+        return DiffResult(type='same', original=None, modified=None, fields=[])
+
+    fields = []
+    change_type = 'same'
+
+    # Style change
+    if block1.style != block2.style:
+        fields.append({'name': 'style', 'orig': block1.style, 'modif': block2.style})
+        change_type = 'format'
+
+    # Overrides change
+    if block1.overrides != block2.overrides:
+        fields.append({'name': 'overrides', 'orig': block1.overrides, 'modif': block2.overrides})
+        change_type = 'format'
+
+    # Content change
+    if block1.text != block2.text:
+        fields.append({'name': 'content', 'orig': block1.text, 'modif': block2.text})
+        change_type = 'content'
+
+    return DiffResult(type=change_type, original=block1, modified=block2, fields=fields)
+
 if __name__ == "__main__":
     print(generate_diff(sys.argv[1], sys.argv[2]))
