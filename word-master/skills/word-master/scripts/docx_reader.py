@@ -55,7 +55,27 @@ def _extract_run_overrides(paragraph):
 def extract_rich_markdown(filepath, overview=False):
     doc = docx.Document(filepath)
     lines = []
-    lines.append(f"<!-- DOCUMENT: {filepath} -->\n")
+    lines.append(f"<!-- DOCUMENT: {filepath} -->")
+    
+    if not overview:
+        # Collect all used style names
+        used_style_names = set(p.style.name for p in doc.paragraphs if p.text.strip())
+        if used_style_names:
+            lines.append("<!-- STYLES:")
+            for s_name in sorted(used_style_names):
+                if s_name in doc.styles:
+                    style = doc.styles[s_name]
+                    props = _extract_style_props(style)
+                    if props:
+                        prop_str = ", ".join(f"{k}:{v}" for k, v in props.items())
+                        lines.append(f"  {s_name} -> {prop_str}")
+                    else:
+                        lines.append(f"  {s_name} -> (default)")
+                else:
+                    lines.append(f"  {s_name} -> (not found in doc.styles)")
+            lines.append("-->")
+    
+    lines.append("") # empty line after header
     
     for i, para in enumerate(doc.paragraphs):
         text = para.text.strip()
@@ -66,9 +86,14 @@ def extract_rich_markdown(filepath, overview=False):
         if overview and not style_name.startswith('Heading'):
             continue
             
-        lines.append(f"### [p{i}] {text} {{{style_name}}}")
+        overrides = _extract_run_overrides(para) if not overview else []
+        if overrides:
+            override_str = " | override: " + "; ".join(overrides)
+            lines.append(f"### [p{i}] {text} {{{style_name}{override_str}}}")
+        else:
+            lines.append(f"### [p{i}] {text} {{{style_name}}}")
         
-    return "\n\n".join(lines)
+    return "\n".join(lines)
 
 if __name__ == "__main__":
     filepath = sys.argv[1]
