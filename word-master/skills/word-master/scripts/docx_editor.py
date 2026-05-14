@@ -334,6 +334,59 @@ def _apply_insert_page_break(doc, params):
         print("[WARNING] op=insert_page_break: invalid target format, skipping.")
 
 
+def _parse_unit(val_str):
+    from docx.shared import Cm, Pt
+    if val_str.endswith('cm'):
+        return Cm(float(val_str.rstrip('cm')))
+    elif val_str.endswith('pt'):
+        return Pt(float(val_str.rstrip('pt')))
+    return None
+
+
+def _apply_apply_style(doc, params):
+    target = params.get('target')
+    style_name = params.get('style')
+    if not target or not style_name:
+        print("[WARNING] op=apply_style: missing parameters, skipping.")
+        return
+    try:
+        idx = int(target.replace('p', ''))
+        if idx < 0 or idx >= len(doc.paragraphs):
+            print(f"[WARNING] op=apply_style: paragraph index {idx} out of bounds, skipping.")
+            return
+        if style_name in doc.styles:
+            doc.paragraphs[idx].style = style_name
+        else:
+            print(f"[WARNING] op=apply_style: style '{style_name}' not found, skipping.")
+    except (ValueError, AttributeError, IndexError):
+        print("[WARNING] op=apply_style: invalid target format or index, skipping.")
+
+
+def _apply_set_page_setup(doc, params):
+    sec_idx = params.get('section', 0)
+    try:
+        section = doc.sections[sec_idx]
+        for margin in ['margin_top', 'margin_bottom', 'margin_left', 'margin_right']:
+            if margin in params:
+                val = _parse_unit(params[margin])
+                if val:
+                    if margin == 'margin_top': section.top_margin = val
+                    elif margin == 'margin_bottom': section.bottom_margin = val
+                    elif margin == 'margin_left': section.left_margin = val
+                    elif margin == 'margin_right': section.right_margin = val
+        
+        orientation = params.get('orientation')
+        if orientation == 'landscape':
+            section.orientation = docx.enum.section.WD_ORIENT.LANDSCAPE
+            section.page_width, section.page_height = section.page_height, section.page_width
+        elif orientation == 'portrait':
+            section.orientation = docx.enum.section.WD_ORIENT.PORTRAIT
+            if section.page_width > section.page_height:
+                section.page_width, section.page_height = section.page_height, section.page_width
+    except IndexError:
+        print("[WARNING] op=set_page_setup: section index out of bounds, skipping.")
+
+
 def _backup_file(filepath):
     """Create a .bak backup of the original file before modifying."""
     bak_path = filepath + '.bak'
@@ -390,6 +443,10 @@ def apply_operations(filepath, ops, outpath=None):
             _apply_set_header_footer(doc, op)
         elif op['op'] == 'insert_page_break':
             _apply_insert_page_break(doc, op)
+        elif op['op'] == 'apply_style':
+            _apply_apply_style(doc, op)
+        elif op['op'] == 'set_page_setup':
+            _apply_set_page_setup(doc, op)
 
     doc.save(outpath)
 
