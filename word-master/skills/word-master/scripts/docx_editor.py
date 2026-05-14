@@ -236,6 +236,60 @@ def _apply_delete_paragraph(doc, params):
         print("[WARNING] op=delete_paragraph: invalid target format, skipping.")
 
 
+def _apply_modify_cell(doc, params):
+    t_idx, r_idx, c_idx = params.get('table'), params.get('row'), params.get('col')
+    if any(x is None for x in [t_idx, r_idx, c_idx, params.get('content')]):
+        print("[WARNING] op=modify_cell: missing required parameters, skipping.")
+        return
+    try:
+        table = doc.tables[t_idx]
+        table.cell(r_idx, c_idx).text = params['content']
+    except IndexError:
+        print("[WARNING] op=modify_cell: index out of bounds, skipping.")
+
+
+def _apply_insert_row(doc, params):
+    t_idx = params.get('table')
+    before, after = params.get('before'), params.get('after')
+    if t_idx is None or (before is None and after is None) or (before is not None and after is not None):
+        print("[WARNING] op=insert_row: invalid parameters, skipping.")
+        return
+    try:
+        table = doc.tables[t_idx]
+        target_row_idx = before if before is not None else after
+        target_row = table.rows[target_row_idx]
+        new_row = table.add_row()
+        if before is not None:
+            target_row._tr.addprevious(new_row._tr)
+        else:
+            target_row._tr.addnext(new_row._tr)
+    except IndexError:
+        print("[WARNING] op=insert_row: index out of bounds, skipping.")
+
+
+def _apply_insert_table(doc, params):
+    before_id, after_id = params.get('before'), params.get('after')
+    rows, cols = params.get('rows'), params.get('cols')
+    if (before_id is None and after_id is None) or (before_id and after_id) or rows is None or cols is None:
+        print("[WARNING] op=insert_table: invalid parameters, skipping.")
+        return
+    
+    target_id = before_id or after_id
+    try:
+        idx = int(target_id.replace('p', ''))
+        if idx < 0 or idx >= len(doc.paragraphs):
+            print(f"[WARNING] op=insert_table: paragraph index {idx} out of bounds, skipping.")
+            return
+        anchor_p = doc.paragraphs[idx]
+        new_table = doc.add_table(rows=rows, cols=cols)
+        if before_id:
+            anchor_p._p.addprevious(new_table._tbl)
+        else:
+            anchor_p._p.addnext(new_table._tbl)
+    except (ValueError, AttributeError, IndexError):
+        print("[WARNING] op=insert_table: invalid target format or out of bounds, skipping.")
+
+
 def _backup_file(filepath):
     """Create a .bak backup of the original file before modifying."""
     bak_path = filepath + '.bak'
@@ -282,6 +336,12 @@ def apply_operations(filepath, ops, outpath=None):
             _apply_insert_paragraph(doc, op)
         elif op['op'] == 'delete_paragraph':
             _apply_delete_paragraph(doc, op)
+        elif op['op'] == 'modify_cell':
+            _apply_modify_cell(doc, op)
+        elif op['op'] == 'insert_row':
+            _apply_insert_row(doc, op)
+        elif op['op'] == 'insert_table':
+            _apply_insert_table(doc, op)
 
     doc.save(outpath)
 
