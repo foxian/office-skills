@@ -178,6 +178,64 @@ def _apply_set_paragraph_format(paragraph, params):
             from docx.shared import Pt
             pf.space_after = Pt(float(space_str.rstrip("pt")))
 
+def _apply_insert_paragraph(doc, params):
+    """Insert a new paragraph before or after the anchor paragraph."""
+    content = params.get('content')
+    if content is None:
+        print("[WARNING] op=insert_paragraph: missing content, skipping.")
+        return
+
+    before_id = params.get('before')
+    after_id = params.get('after')
+
+    if bool(before_id) == bool(after_id):
+        print("[WARNING] op=insert_paragraph: must provide exactly one of 'before' or 'after', skipping.")
+        return
+
+    target_id = before_id or after_id
+    try:
+        idx = int(target_id.replace('p', ''))
+        if idx < 0 or idx >= len(doc.paragraphs):
+            print(f"[WARNING] op=insert_paragraph: paragraph index {idx} out of bounds, skipping.")
+            return
+    except (ValueError, AttributeError):
+        print("[WARNING] op=insert_paragraph: invalid target format, skipping.")
+        return
+
+    anchor_p = doc.paragraphs[idx]
+    style_name = params.get('style')
+
+    if before_id:
+        new_p = anchor_p.insert_paragraph_before(content)
+        if style_name:
+            new_p.style = style_name
+        elif idx == 0:
+            new_p.style = 'Normal'
+        else:
+            new_p.style = anchor_p.style.name
+    else:
+        new_p = doc.add_paragraph(content)
+        anchor_p._p.addnext(new_p._p)
+        new_p.style = style_name if style_name else anchor_p.style.name
+
+
+def _apply_delete_paragraph(doc, params):
+    """Delete the paragraph at the given index."""
+    target = params.get('target')
+    if not target:
+        print("[WARNING] op=delete_paragraph: missing target, skipping.")
+        return
+    try:
+        idx = int(target.replace('p', ''))
+        if idx < 0 or idx >= len(doc.paragraphs):
+            print(f"[WARNING] op=delete_paragraph: paragraph index {idx} out of bounds, skipping.")
+            return
+        p = doc.paragraphs[idx]
+        p._element.getparent().remove(p._element)
+    except (ValueError, AttributeError):
+        print("[WARNING] op=delete_paragraph: invalid target format, skipping.")
+
+
 def _backup_file(filepath):
     """Create a .bak backup of the original file before modifying."""
     bak_path = filepath + '.bak'
@@ -220,6 +278,10 @@ def apply_operations(filepath, ops, outpath=None):
             idx = int(op['target'].replace('p', ''))
             if idx < len(doc.paragraphs):
                 _apply_set_paragraph_format(doc.paragraphs[idx], op)
+        elif op['op'] == 'insert_paragraph':
+            _apply_insert_paragraph(doc, op)
+        elif op['op'] == 'delete_paragraph':
+            _apply_delete_paragraph(doc, op)
 
     doc.save(outpath)
 
