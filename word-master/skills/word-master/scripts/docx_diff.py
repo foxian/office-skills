@@ -4,6 +4,7 @@ import sys
 import difflib
 from dataclasses import dataclass, field
 from typing import List, Optional
+from docx_reader import extract_rich_markdown
 
 @dataclass
 class ParagraphBlock:
@@ -122,7 +123,7 @@ def compute_field_diff(block1: Optional[ParagraphBlock], block2: Optional[Paragr
 
     return DiffResult(type=change_type, original=block1, modified=block2, fields=fields)
 
-def format_diff_report(diff_results: List[DiffResult], original: str, modified: str, context: int = 1) -> str:
+def format_diff_report(diff_results: List[DiffResult], original: str, modified: str, context: int = 1, include_same: bool = False) -> str:
     """Format diff results into Markdown report."""
     lines = []
     lines.append(f"# DOCX Diff Report")
@@ -134,6 +135,10 @@ def format_diff_report(diff_results: List[DiffResult], original: str, modified: 
 
     for result in diff_results:
         if result.type == 'same':
+            if include_same:
+                lines.append(f"### [p{result.original.index}] {{{result.original.style}}}")
+                lines.append(result.original.text)
+                lines.append("")
             continue
         elif result.type == 'new':
             lines.append(f"### [新增] [p{result.modified.index}] {{{result.modified.style}}}")
@@ -155,6 +160,33 @@ def format_diff_report(diff_results: List[DiffResult], original: str, modified: 
             lines.append("")
 
     return "\n".join(lines)
+
+def generate_rich_diff(path1: str, path2: str, context: int = 1) -> str:
+    """
+    Generate rich-text semantic diff between two DOCX files.
+    """
+    # Extract markdown from both documents
+    md1 = extract_rich_markdown(path1)
+    md2 = extract_rich_markdown(path2)
+
+    # Parse into blocks
+    blocks1 = parse_markdown_blocks(md1)
+    blocks2 = parse_markdown_blocks(md2)
+
+    # Align paragraphs
+    aligned = align_paragraphs(blocks1, blocks2)
+
+    # Compute diffs
+    diff_results = []
+    for b1, b2, status in aligned:
+        if status == 'same':
+            diff_results.append(DiffResult(type='same', original=b1, modified=b2, fields=[]))
+        else:
+            diff_results.append(compute_field_diff(b1, b2))
+
+    # Format report
+    return format_diff_report(diff_results, original=path1, modified=path2, context=context, include_same=context > 0)
+
 
 if __name__ == "__main__":
     print(generate_diff(sys.argv[1], sys.argv[2]))
