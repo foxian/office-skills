@@ -165,9 +165,17 @@ def generate_rich_diff(path1: str, path2: str, context: int = 1) -> str:
     """
     Generate rich-text semantic diff between two DOCX files.
     """
-    # Extract markdown from both documents
-    md1 = extract_rich_markdown(path1)
-    md2 = extract_rich_markdown(path2)
+    import os
+    if not os.path.exists(path1):
+        raise FileNotFoundError(f"File not found: {path1}")
+    if not os.path.exists(path2):
+        raise FileNotFoundError(f"File not found: {path2}")
+
+    try:
+        md1 = extract_rich_markdown(path1)
+        md2 = extract_rich_markdown(path2)
+    except Exception as e:
+        raise ValueError(f"Failed to parse DOCX files: {e}")
 
     # Parse into blocks
     blocks1 = parse_markdown_blocks(md1)
@@ -189,4 +197,26 @@ def generate_rich_diff(path1: str, path2: str, context: int = 1) -> str:
 
 
 if __name__ == "__main__":
-    print(generate_diff(sys.argv[1], sys.argv[2]))
+    import argparse
+
+    parser = argparse.ArgumentParser(description='DOCX Rich Diff')
+    parser.add_argument('path1', help='Original DOCX file')
+    parser.add_argument('path2', help='Modified DOCX file')
+    parser.add_argument('--output', '-o', help='Output file path')
+    parser.add_argument('--verbose', '-v', action='store_true', help='Also output to stdout')
+    parser.add_argument('--context', '-c', type=int, default=1, help='Context paragraphs count')
+    args = parser.parse_args()
+
+    try:
+        result = generate_rich_diff(args.path1, args.path2, context=args.context)
+    except (FileNotFoundError, ValueError) as e:
+        print(f"Error: {e}", file=sys.stderr)
+        sys.exit(1)
+
+    if args.output:
+        with open(args.output, 'w', encoding='utf-8') as f:
+            f.write(result)
+        if args.verbose or not sys.stdout.isatty():
+            print(result)
+    else:
+        print(result)
