@@ -23,25 +23,128 @@ def _replace_text_in_runs(paragraph, find_txt, repl_txt):
 
     return replaced
 
-def _apply_set_font(paragraph, params):
-    """Apply font settings to all runs in a paragraph."""
-    for run in paragraph.runs:
-        if "name" in params:
-            run.font.name = params["name"]
-        if "east_asia" in params:
+def _copy_run_format(src_run, dest_run):
+    """Copy formatting from src_run to dest_run"""
+    dest_run.bold = src_run.bold
+    dest_run.italic = src_run.italic
+    dest_run.underline = src_run.underline
+    dest_run.style = src_run.style
+    if src_run.font:
+        if src_run.font.name:
+            dest_run.font.name = src_run.font.name
+        if src_run.font.size:
+            dest_run.font.size = src_run.font.size
+        if src_run.font.color and src_run.font.color.rgb:
+            dest_run.font.color.rgb = src_run.font.color.rgb
+        if src_run.font.highlight_color:
+            dest_run.font.highlight_color = src_run.font.highlight_color
+        dest_run.font.strike = src_run.font.strike
+        dest_run.font.subscript = src_run.font.subscript
+        dest_run.font.superscript = src_run.font.superscript
+
+def _apply_font_attributes(run, params):
+    if "name" in params:
+        run.font.name = params["name"]
+    if "east_asia" in params:
+        try:
             run.font.east_asia = params["east_asia"]
-        if "size" in params:
-            size_str = params["size"]
-            if size_str.endswith("pt"):
-                from docx.shared import Pt
-                run.font.size = Pt(float(size_str.rstrip("pt")))
-            elif size_str.isdigit():
-                from docx.shared import Pt
-                run.font.size = Pt(int(size_str) / 2)
-        if "bold" in params:
-            run.bold = params["bold"]
-        if "italic" in params:
-            run.italic = params["italic"]
+        except AttributeError:
+            pass
+    if "size" in params:
+        size_str = str(params["size"])
+        if size_str.endswith("pt"):
+            from docx.shared import Pt
+            run.font.size = Pt(float(size_str.rstrip("pt")))
+        elif size_str.isdigit():
+            from docx.shared import Pt
+            run.font.size = Pt(int(size_str) / 2)
+    if "bold" in params:
+        run.bold = params["bold"]
+    if "italic" in params:
+        run.italic = params["italic"]
+
+def _apply_set_font(paragraph, params):
+    """Apply font settings to paragraph runs or specific matched text."""
+    text_match = params.get("text_match")
+    
+    if not text_match:
+        for run in paragraph.runs:
+            _apply_font_attributes(run, params)
+        return
+
+    full_text = paragraph.text
+    if text_match not in full_text:
+        return
+        
+    match_index = params.get("match_index", "all")
+    match_ranges = []
+    start = 0
+    while True:
+        idx = full_text.find(text_match, start)
+        if idx == -1:
+            break
+        match_ranges.append((idx, idx + len(text_match)))
+        start = idx + len(text_match)
+        
+    if str(match_index) != "all":
+        try:
+            mi = int(match_index)
+            if mi < 0 or mi >= len(match_ranges):
+                return
+            match_ranges = [match_ranges[mi]]
+        except ValueError:
+            pass
+
+    if not match_ranges:
+        return
+
+    original_runs_info = []
+    current_idx = 0
+    for r in paragraph.runs:
+        r_len = len(r.text)
+        original_runs_info.append({
+            'text': r.text,
+            'start': current_idx,
+            'end': current_idx + r_len,
+            'run': r
+        })
+        current_idx += r_len
+
+    paragraph.clear()
+
+    for r_info in original_runs_info:
+        r_start = r_info['start']
+        r_end = r_info['end']
+        r_text = r_info['text']
+        
+        intersections = []
+        for m_start, m_end in match_ranges:
+            if m_start < r_end and m_end > r_start:
+                intersections.append((max(r_start, m_start), min(r_end, m_end)))
+                
+        if not intersections:
+            new_run = paragraph.add_run(r_text)
+            _copy_run_format(r_info['run'], new_run)
+            continue
+            
+        curr_offset = 0
+        for i_start, i_end in intersections:
+            rel_start = i_start - r_start
+            rel_end = i_end - r_start
+            
+            if rel_start > curr_offset:
+                new_run = paragraph.add_run(r_text[curr_offset:rel_start])
+                _copy_run_format(r_info['run'], new_run)
+                
+            new_run = paragraph.add_run(r_text[rel_start:rel_end])
+            _copy_run_format(r_info['run'], new_run)
+            _apply_font_attributes(new_run, params)
+            
+            curr_offset = rel_end
+            
+        if curr_offset < len(r_text):
+            new_run = paragraph.add_run(r_text[curr_offset:])
+            _copy_run_format(r_info['run'], new_run)
 
 def _apply_set_paragraph_format(paragraph, params):
     """Apply paragraph format settings."""
@@ -99,10 +202,16 @@ def apply_operations(filepath, ops, outpath=None):
                 para.text = op['content']
                 para.style = saved_style
         elif op['op'] == 'replace_text':
+            target = op.get('target', 'all')
             find_txt = op['find']
             repl_txt = op['replace']
-            for p in doc.paragraphs:
-                _replace_text_in_runs(p, find_txt, repl_txt)
+            if target == 'all':
+                for p in doc.paragraphs:
+                    _replace_text_in_runs(p, find_txt, repl_txt)
+            else:
+                idx = int(target.replace('p', ''))
+                if idx < len(doc.paragraphs):
+                    _replace_text_in_runs(doc.paragraphs[idx], find_txt, repl_txt)
         elif op['op'] == 'set_font':
             idx = int(op['target'].replace('p', ''))
             if idx < len(doc.paragraphs):

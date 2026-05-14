@@ -7,14 +7,14 @@ AI must output JSON arrays containing edit operations.
 查找替换文本，保留 run 级别格式。
 
 ```json
-{"op": "replace_text", "find": "A", "replace": "B", "scope": "all"}
+{"op": "replace_text", "find": "A", "replace": "B", "target": "all"}
 ```
 
 | 参数 | 类型 | 必填 | 说明 |
 |------|------|------|------|
+| target | string | 否 | 目标范围：默认 "all" 表示全局替换；传 "p0" 等表示仅在该段落内替换 |
 | find | string | ✅ | 要查找的文本 |
 | replace | string | ✅ | 替换后的文本 |
-| scope | string | 否 | 作用域，默认 "all" |
 
 ## rewrite_paragraph 操作
 
@@ -31,12 +31,14 @@ AI must output JSON arrays containing edit operations.
 
 ## set_font 操作
 
-设置段落字体格式（段落级别，作用于该段落所有 run）。
+设置段落或行内特定文字的字体格式。
 
 ```json
 {
   "op": "set_font",
   "target": "p0",
+  "text_match": "需要加粗的词",
+  "match_index": 0,
   "name": "Arial",
   "east_asia": "楷体",
   "size": "14pt",
@@ -48,6 +50,8 @@ AI must output JSON arrays containing edit operations.
 | 参数 | 类型 | 必填 | 说明 |
 |------|------|------|------|
 | target | string | ✅ | 段落 ID，如 "p0" |
+| text_match | string | 否 | 行内特定文字。如果不填，则修改整个段落的格式 |
+| match_index | int/string | 否 | 仅当填了 `text_match` 时有效。传数字 N (0开始) 表示修改第 N 次出现的文字；省略或传 "all" 表示修改段落内所有匹配项 |
 | name | string | 否 | 西文字体名 |
 | east_asia | string | 否 | 中文字体名 |
 | size | string | 否 | 字号，如 "14pt" 或 "28"（half-points） |
@@ -56,7 +60,7 @@ AI must output JSON arrays containing edit operations.
 
 **示例：**
 - 设置整段为 Arial 14pt 加粗：`{"op": "set_font", "target": "p0", "name": "Arial", "size": "14pt", "bold": true}`
-- 设置中文字体为楷体：`{"op": "set_font", "target": "p1", "east_asia": "楷体"}`
+- 局部修改第一个出现的词汇：`{"op": "set_font", "target": "p1", "text_match": "附件", "match_index": 0, "bold": true}`
 
 ## set_paragraph_format 操作
 

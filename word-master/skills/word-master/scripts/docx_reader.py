@@ -34,6 +34,24 @@ def _extract_style_props(style):
             
     return props
 
+def _extract_run_overrides(paragraph):
+    overrides = []
+    for run in paragraph.runs:
+        text = run.text.strip()
+        if not text:
+            continue
+        
+        run_props = {}
+        if run.font.name is not None: run_props['font'] = run.font.name
+        if run.font.size is not None: run_props['size'] = f"{run.font.size.pt}pt"
+        if run.font.bold is not None: run_props['bold'] = run.font.bold
+        if run.font.italic is not None: run_props['italic'] = run.font.italic
+        
+        if run_props:
+            prop_str = ", ".join(f"{k}={v}" for k, v in run_props.items())
+            overrides.append(f"{prop_str} on \"{text}\"")
+    return overrides
+
 def extract_rich_markdown(filepath, overview=False):
     doc = docx.Document(filepath)
     lines = []
