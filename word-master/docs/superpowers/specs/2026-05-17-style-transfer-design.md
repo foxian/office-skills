@@ -38,13 +38,19 @@ python style_transfer.py template.docx draft.docx output.docx
 ```
 
 它的内部执行逻辑如下：
-1. **调用** `style_analyzer.py` 获取 `template.docx` 的指纹摘要。
-2. **调用 LLM** 进行语义推理，生成 `style_profile.json`（将指纹映射为 Word 标准样式名，如 Heading 1）。
-3. 复制 `template.docx` 到 `output.docx`。
-4. **清理与注入**：
+1. **获取样式配置**：
+   - 默认模式：**调用** `style_analyzer.py` 获取 `template.docx` 的指纹摘要，并**调用 LLM** 进行语义推理，生成格式映射配置文件 `style_profile.json`。
+   - 复用模式：如果命令行传入了已有的 `.json` 配置文件，则跳过分析和推理阶段，直接使用该配置文件。这使得同一种模板的后续转换速度极快且不需要消耗额外的 tokens。
+2. 复制 `template.docx` 到 `output.docx`。
+3. **清理与注入**：
    - 识别 `output.docx` 中的“占位/示范正文区”并删除（此步骤的边界识别策略需要在实现阶段细化，可通过固定标记或AI识别进行）。
    - 读取 `draft.docx` 中的内容。
-   - 结合 `style_profile.json`，将内容逐段插入 `output.docx`。
+   - 结合上一步获取的配置文件，将内容逐段插入 `output.docx`。
+
+**复用配置的命令行示例：**
+```bash
+python style_transfer.py --profile style_profile.json template.docx draft.docx output.docx
+```
 
 ### 3.3 交互与审核模式 (Review Mode)
 考虑到完全自动化可能会导致AI推理样式的偏差，提供 `--review` 标志：
