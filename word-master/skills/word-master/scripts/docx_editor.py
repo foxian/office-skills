@@ -46,10 +46,16 @@ def _apply_font_attributes(run, params):
     if "name" in params:
         run.font.name = params["name"]
     if "east_asia" in params:
-        try:
-            run.font.east_asia = params["east_asia"]
-        except AttributeError:
-            pass
+        from docx.oxml.ns import qn
+        rpr = run._element.find(qn('w:rPr'))
+        if rpr is None:
+            rpr = run._element.makeelement(qn('w:rPr'), {})
+            run._element.insert(0, rpr)
+        rfonts = rpr.find(qn('w:rFonts'))
+        if rfonts is None:
+            rfonts = rpr.makeelement(qn('w:rFonts'), {})
+            rpr.insert(0, rfonts)
+        rfonts.set(qn('w:eastAsia'), params["east_asia"])
     if "size" in params:
         size_str = str(params["size"])
         if size_str.endswith("pt"):
