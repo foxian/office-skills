@@ -47,21 +47,25 @@ def _score(fp, role_fp):
     elif f1 == f2:
         total += 0.25
 
-    # space_before (weight=0.0625): exact match, None==None counts as match
-    sb1 = fp.get("space_before")
-    sb2 = role_fp.get("space_before")
-    if sb1 is None and sb2 is None:
-        total += 0.0625
-    elif sb1 == sb2:
-        total += 0.0625
+    # space_before (weight=0.0625): numeric comparison within 0.5pt tolerance
+    # None is treated as "0.0pt" for backward compatibility with old profiles
+    sb1 = fp.get("space_before") or "0.0pt"
+    sb2 = role_fp.get("space_before") or "0.0pt"
+    try:
+        if abs(float(sb1.rstrip("pt")) - float(sb2.rstrip("pt"))) < 0.5:
+            total += 0.0625
+    except (ValueError, AttributeError):
+        pass
 
-    # space_after (weight=0.0625): exact match, None==None counts as match
-    sa1 = fp.get("space_after")
-    sa2 = role_fp.get("space_after")
-    if sa1 is None and sa2 is None:
-        total += 0.0625
-    elif sa1 == sa2:
-        total += 0.0625
+    # space_after (weight=0.0625): numeric comparison within 0.5pt tolerance
+    # None is treated as "0.0pt" for backward compatibility with old profiles
+    sa1 = fp.get("space_after") or "0.0pt"
+    sa2 = role_fp.get("space_after") or "0.0pt"
+    try:
+        if abs(float(sa1.rstrip("pt")) - float(sa2.rstrip("pt"))) < 0.5:
+            total += 0.0625
+    except (ValueError, AttributeError):
+        pass
 
     return total
 

@@ -78,29 +78,28 @@ def compute_effective_fingerprint(paragraph):
     eff_font = run_font if run_font is not None else style_font_name
 
     # Spacing fields (paragraph-level)
-    pf = paragraph.paragraph_format if hasattr(paragraph, 'paragraph_format') else None
 
     def _get_pt_str(val):
-        """Convert Pt value to 'Xpt' string, or None if not set."""
+        """Convert Pt value to 'Xpt' string, defaults to '0.0pt' if not set."""
         if val is None:
-            return None
+            return "0.0pt"
         try:
             return f"{val.pt}pt"
         except AttributeError:
-            return None
+            return "0.0pt"
 
-    sb_val = pf.space_before if pf else None
+    sb_val = paragraph.paragraph_format.space_before
     if sb_val is None and style_pf:
         sb_val = style_pf.space_before
     eff_space_before = _get_pt_str(sb_val)
 
-    sa_val = pf.space_after if pf else None
+    sa_val = paragraph.paragraph_format.space_after
     if sa_val is None and style_pf:
         sa_val = style_pf.space_after
     eff_space_after = _get_pt_str(sa_val)
 
     # Line spacing: only support multiplier (float), not absolute Pt
-    ls_val = pf.line_spacing if pf else None
+    ls_val = paragraph.paragraph_format.line_spacing
     if ls_val is None and style_pf:
         ls_val = style_pf.line_spacing
     # python-docx: if line_spacing is a Pt object, it's absolute mode — not supported
