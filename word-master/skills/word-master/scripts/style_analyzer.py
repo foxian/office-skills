@@ -1,7 +1,17 @@
 import docx
 import json
+import re
 import sys
 from docx.enum.text import WD_ALIGN_PARAGRAPH
+
+CHAPTER_PATTERN = re.compile(
+    r'^(第[一二三四五六七八九十\d]+章|[一二三四五六七八九十]+、|（[一二三四五六七八九十\d]+）|\d+\.\s)'
+)
+
+
+def _fingerprint_key(fp):
+    """Convert fingerprint dict to a hashable key for grouping."""
+    return (fp.get("size"), fp.get("bold"), fp.get("italic"), fp.get("align"))
 
 
 def _get_effective_value(run_val, style_val):
@@ -64,3 +74,52 @@ def compute_effective_fingerprint(paragraph):
         "italic": eff_italic,
         "align": eff_align,
     }
+
+
+def extract_fingerprints(filepath, min_cluster_size=4):
+    """
+    Analyze a DOCX document, extract body format fingerprint clusters.
+    Filter out clusters with < min_cluster_size members (cover page, etc).
+    Each cluster retains one representative sample text.
+    Returns list of {id, fingerprint, example}.
+    """
+    doc = docx.Document(filepath)
+
+    clusters = {}  # key -> list of (paragraph_text, fingerprint)
+    for para in doc.paragraphs:
+        text = para.text.strip()
+        if not text:
+            continue
+        fp = compute_effective_fingerprint(para)
+        key = _fingerprint_key(fp)
+        if key not in clusters:
+            clusters[key] = []
+        clusters[key].append((text, fp))
+
+    # Strategy A: filter small clusters; Strategy C: chapter pattern clusters exempt from filtering
+    result = []
+    for i, (key, members) in enumerate(clusters.items()):
+        has_chapter_pattern = any(CHAPTER_PATTERN.match(text) for text, _ in members)
+        if len(members) < min_cluster_size and not has_chapter_pattern:
+            continue
+        representative_text, representative_fp = members[0]
+        result.append({
+            "id": i,
+            "fingerprint": representative_fp,
+            "example": representative_text,
+        })
+    return result
+
+
+if __name__ == "__main__":
+    import argparse
+    parser = argparse.ArgumentParser(description="Extract style fingerprints from a DOCX template.")
+    parser.add_argument("filepath", help="Source template DOCX path")
+    parser.add_argument("--min-cluster-size", type=int, default=4)
+    parser.add_argument("--output", default="fingerprints.json")
+    args = parser.parse_args()
+    fingerprints = extract_fingerprints(args.filepath, args.min_cluster_size)
+    with open(args.output, "w", encoding="utf-8") as f:
+        json.dump(fingerprints, f, ensure_ascii=False, indent=2)
+    print(f"[INFO] Extracted {len(fingerprints)} fingerprint groups → {args.output}")
+
