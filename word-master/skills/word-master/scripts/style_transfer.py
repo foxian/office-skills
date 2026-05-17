@@ -1,11 +1,23 @@
 import docx
 import json
+import re
 import sys
 import os
 
 # Reuse fingerprint computation from style_analyzer
 sys.path.insert(0, os.path.dirname(__file__))
 from style_analyzer import compute_effective_fingerprint
+
+# Text patterns for semantic role inference (fallback when fingerprint is uninformative)
+_HEADING1_PATTERN = re.compile(
+    r'^(第[一二三四五六七八九十\d]+篇|第[一二三四五六七八九十\d]+章)\s'
+)
+_HEADING2_PATTERN = re.compile(
+    r'^(\d+\.\d*\s|[一二三四五六七八九十]+、\s)'
+)
+_HEADING3_PATTERN = re.compile(
+    r'^(\d+\.\d+\.\d*\s|（[一二三四五六七八九十\d]+）\s|[一二三四五六七八九十]+、\d)'
+)
 
 
 def _score(fp, role_fp):
@@ -15,59 +27,103 @@ def _score(fp, role_fp):
              font=0.25, space_before=0.0625, space_after=0.0625.
     line_spacing is recorded in fingerprint but not scored.
     Size uses linear decay: max(0, 1 - diff/10).
+
+    When a field in fp is None (not set, relies on style default), that
+    dimension is skipped and the score is renormalized so the max is 1.0.
+    This prevents "fake style" documents (no run-level overrides) from
+    being penalized for missing font/size information.
     """
-    total = 0.0
+    score = 0.0
+    weight_sum = 0.0  # tracks total weight of scored dimensions
 
     # size (weight=0.25): linear decay
     s1 = fp.get("size")
     s2 = role_fp.get("size")
-    if s1 and s2:
-        try:
-            diff = abs(float(s1.rstrip("pt")) - float(s2.rstrip("pt")))
-            total += max(0.0, 1.0 - diff / 10.0) * 0.25
-        except ValueError:
-            pass
-    elif s1 == s2:  # both None
-        total += 0.25
+    if s1 is not None:
+        weight_sum += 0.25
+        if s1 and s2:
+            try:
+                diff = abs(float(s1.rstrip("pt")) - float(s2.rstrip("pt")))
+                score += max(0.0, 1.0 - diff / 10.0) * 0.25
+            except ValueError:
+                pass
+        elif s1 == s2:  # both None or both empty
+            score += 0.25
 
     # bold (weight=0.125)
-    total += 0.125 if fp.get("bold") == role_fp.get("bold") else 0.0
+    if fp.get("bold") is not None:
+        weight_sum += 0.125
+        score += 0.125 if fp.get("bold") == role_fp.get("bold") else 0.0
 
     # italic (weight=0.125)
-    total += 0.125 if fp.get("italic") == role_fp.get("italic") else 0.0
+    if fp.get("italic") is not None:
+        weight_sum += 0.125
+        score += 0.125 if fp.get("italic") == role_fp.get("italic") else 0.0
 
     # align (weight=0.125)
-    total += 0.125 if fp.get("align") == role_fp.get("align") else 0.0
+    if fp.get("align") is not None:
+        weight_sum += 0.125
+        score += 0.125 if fp.get("align") == role_fp.get("align") else 0.0
 
-    # font (weight=0.25): exact match, None==None counts as match
+    # font (weight=0.25): exact match
     f1 = fp.get("font")
     f2 = role_fp.get("font")
-    if f1 is None and f2 is None:
-        total += 0.25
-    elif f1 == f2:
-        total += 0.25
+    if f1 is not None:
+        weight_sum += 0.25
+        if f2 is None:
+            pass  # fp has font, role doesn't — no score
+        elif f1 == f2:
+            score += 0.25
 
     # space_before (weight=0.0625): numeric comparison within 0.5pt tolerance
-    # None is treated as "0.0pt" for backward compatibility with old profiles
-    sb1 = fp.get("space_before") or "0.0pt"
-    sb2 = role_fp.get("space_before") or "0.0pt"
-    try:
-        if abs(float(sb1.rstrip("pt")) - float(sb2.rstrip("pt"))) < 0.5:
-            total += 0.0625
-    except (ValueError, AttributeError):
-        pass
+    sb1 = fp.get("space_before")
+    if sb1 is not None:
+        weight_sum += 0.0625
+        sb2 = role_fp.get("space_before") or "0.0pt"
+        try:
+            if abs(float(sb1.rstrip("pt")) - float(sb2.rstrip("pt"))) < 0.5:
+                score += 0.0625
+        except (ValueError, AttributeError):
+            pass
 
     # space_after (weight=0.0625): numeric comparison within 0.5pt tolerance
-    # None is treated as "0.0pt" for backward compatibility with old profiles
-    sa1 = fp.get("space_after") or "0.0pt"
-    sa2 = role_fp.get("space_after") or "0.0pt"
-    try:
-        if abs(float(sa1.rstrip("pt")) - float(sa2.rstrip("pt"))) < 0.5:
-            total += 0.0625
-    except (ValueError, AttributeError):
-        pass
+    sa1 = fp.get("space_after")
+    if sa1 is not None:
+        weight_sum += 0.0625
+        sa2 = role_fp.get("space_after") or "0.0pt"
+        try:
+            if abs(float(sa1.rstrip("pt")) - float(sa2.rstrip("pt"))) < 0.5:
+                score += 0.0625
+        except (ValueError, AttributeError):
+            pass
 
-    return total
+    # Renormalize: if some dimensions were skipped, scale score to 0-1 range
+    if weight_sum == 0:
+        return 0.0
+    # Penalize when too few dimensions contributed: if less than half the max
+    # weight (1.0) was available, scale down proportionally. This prevents
+    # paragraphs with all-None fingerprints from scoring 1.0 on just 1-2 dims.
+    confidence = min(1.0, weight_sum / 0.5)  # need at least 0.5 weight to be fully trusted
+    return (score / weight_sum) * confidence
+
+
+def _infer_role_from_text(text, profile):
+    """
+    Infer paragraph role from text patterns when fingerprint matching is inconclusive.
+    Returns a Word style name from the profile, or None.
+    """
+    available_roles = {entry["role"] for entry in profile.get("roles", [])}
+
+    if _HEADING1_PATTERN.match(text):
+        if "Heading 1" in available_roles:
+            return "Heading 1"
+    if _HEADING3_PATTERN.match(text):
+        if "Heading 3" in available_roles:
+            return "Heading 3"
+    if _HEADING2_PATTERN.match(text):
+        if "Heading 2" in available_roles:
+            return "Heading 2"
+    return None
 
 
 def match_fingerprint_to_role(fp, profile, threshold=0.6):
@@ -88,20 +144,30 @@ def match_fingerprint_to_role(fp, profile, threshold=0.6):
 def generate_apply_ops(draft_path, profile, threshold=0.6, skip_head=0, skip_tail=0):
     """
     Walk draft.docx paragraphs, match fingerprints, generate apply_style DSL list.
+    When fingerprint matching is inconclusive (e.g., "fake style" documents with
+    no run-level overrides), falls back to text pattern matching for headings.
     skip_head/skip_tail: skip first/last N paragraphs (human fallback).
     """
     doc = docx.Document(draft_path)
     paras = doc.paragraphs
     n = len(paras)
     ops = []
+    available_roles = {entry["role"] for entry in profile.get("roles", [])}
 
     for i, para in enumerate(paras):
         if i < skip_head or i >= n - skip_tail:
             continue
-        if not para.text.strip():
+        text = para.text.strip()
+        if not text:
             continue
         fp = compute_effective_fingerprint(para)
         role = match_fingerprint_to_role(fp, profile, threshold)
+        if role is None:
+            # Fallback: use text pattern when fingerprint is uninformative
+            role = _infer_role_from_text(text, profile)
+        if role is None and "Normal" in available_roles:
+            # Default: paragraphs that don't match any heading pattern are body text
+            role = "Normal"
         if role:
             ops.append({"op": "apply_style", "target": f"p{i}", "style": role})
     return ops
