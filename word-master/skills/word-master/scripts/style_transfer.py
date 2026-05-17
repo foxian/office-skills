@@ -11,31 +11,59 @@ from style_analyzer import compute_effective_fingerprint
 def _score(fp, role_fp):
     """
     Calculate similarity score between two fingerprints (0.0 ~ 1.0).
-    Equal weights: size=1/4, bold=1/4, italic=1/4, align=1/4.
-    Size uses linear decay: max(0, 1 - diff/10) * (1/4).
+    Weights: size=0.25, bold=0.125, italic=0.125, align=0.125,
+             font=0.25, space_before=0.0625, space_after=0.0625.
+    line_spacing is recorded in fingerprint but not scored.
+    Size uses linear decay: max(0, 1 - diff/10).
     """
-    total = 4.0
-    w = 1.0 / total
+    total = 0.0
 
-    # size similarity: linear decay, diff=0 -> 1.0, diff=10 -> 0.0
+    # size (weight=0.25): linear decay
     s1 = fp.get("size")
     s2 = role_fp.get("size")
     if s1 and s2:
         try:
             diff = abs(float(s1.rstrip("pt")) - float(s2.rstrip("pt")))
-            size_score = max(0.0, 1.0 - diff / 10.0) * w
+            total += max(0.0, 1.0 - diff / 10.0) * 0.25
         except ValueError:
-            size_score = 0.0
+            pass
     elif s1 == s2:  # both None
-        size_score = w
-    else:
-        size_score = 0.0
+        total += 0.25
 
-    bold_score = w if fp.get("bold") == role_fp.get("bold") else 0.0
-    italic_score = w if fp.get("italic") == role_fp.get("italic") else 0.0
-    align_score = w if fp.get("align") == role_fp.get("align") else 0.0
+    # bold (weight=0.125)
+    total += 0.125 if fp.get("bold") == role_fp.get("bold") else 0.0
 
-    return size_score + bold_score + italic_score + align_score
+    # italic (weight=0.125)
+    total += 0.125 if fp.get("italic") == role_fp.get("italic") else 0.0
+
+    # align (weight=0.125)
+    total += 0.125 if fp.get("align") == role_fp.get("align") else 0.0
+
+    # font (weight=0.25): exact match, None==None counts as match
+    f1 = fp.get("font")
+    f2 = role_fp.get("font")
+    if f1 is None and f2 is None:
+        total += 0.25
+    elif f1 == f2:
+        total += 0.25
+
+    # space_before (weight=0.0625): exact match, None==None counts as match
+    sb1 = fp.get("space_before")
+    sb2 = role_fp.get("space_before")
+    if sb1 is None and sb2 is None:
+        total += 0.0625
+    elif sb1 == sb2:
+        total += 0.0625
+
+    # space_after (weight=0.0625): exact match, None==None counts as match
+    sa1 = fp.get("space_after")
+    sa2 = role_fp.get("space_after")
+    if sa1 is None and sa2 is None:
+        total += 0.0625
+    elif sa1 == sa2:
+        total += 0.0625
+
+    return total
 
 
 def match_fingerprint_to_role(fp, profile, threshold=0.6):
