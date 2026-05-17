@@ -68,11 +68,21 @@ def compute_effective_fingerprint(paragraph):
     eff_align_raw = _get_effective_value(pf_align, style_align)
     eff_align = align_map.get(eff_align_raw) if eff_align_raw else None
 
+    # Font family
+    run_font = None
+    for run in paragraph.runs:
+        if run.font.name is not None:
+            run_font = run.font.name
+            break
+    style_font_name = style_font.name if style_font and hasattr(style_font, 'name') else None
+    eff_font = run_font if run_font is not None else style_font_name
+
     return {
         "size": size_str,
         "bold": eff_bold,
         "italic": eff_italic,
         "align": eff_align,
+        "font": eff_font,
     }
 
 

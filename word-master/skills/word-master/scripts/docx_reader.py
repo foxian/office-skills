@@ -112,6 +112,9 @@ def extract_rich_markdown(filepath, overview=False):
     return "\n".join(lines)
 
 if __name__ == "__main__":
+    import sys
+    if hasattr(sys.stdout, 'reconfigure'):
+        sys.stdout.reconfigure(encoding='utf-8')
     filepath = sys.argv[1]
     overview = "--overview" in sys.argv
     print(extract_rich_markdown(filepath, overview))
