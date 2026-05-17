@@ -65,10 +65,10 @@
 
 | 字段 | 来源 | 说明 |
 |------|------|------|
-| `font` | run.font.name → style.font.name（后备） | 中文主字体，优先取首个有显式字体覆盖的 Run |
-| `space_before` | paragraph.paragraph_format.space_before → style | 段前间距，单位 pt，格式化为字符串 |
-| `space_after` | paragraph.paragraph_format.space_after → style | 段后间距，单位 pt，格式化为字符串 |
-| `line_spacing` | paragraph.paragraph_format.line_spacing → style | 行间距倍数（float），若为 None 则为 null |
+| `font` | run.font.name → style.font.name（后备） | 中文主字体，优先取首个有显式字体覆盖的 Run；run.font 为 None 时 fallback 到 style.font.name；仍为 None 时标记为 `null` |
+| `space_before` | paragraph.paragraph_format.space_before → style | 段前间距，单位 pt，格式化为字符串；paragraph_format 为 None 时 fallback 到 0pt |
+| `space_after` | paragraph.paragraph_format.space_after → style | 段后间距，单位 pt，格式化为字符串；paragraph_format 为 None 时 fallback 到 0pt |
+| `line_spacing` | paragraph.paragraph_format.line_spacing → style | 行间距，**仅支持倍数模式**（float，如 1.5）；若为绝对 Pt 值则规范化为 `null`（暂不支持）；若为 None 则为 `null` |
 
 ---
 
@@ -94,7 +94,7 @@ def _fingerprint_key(fp):
 
 ### 2.3 匹配评分的权重变更（`_score()` in `style_transfer.py`）
 
-总维度从 4 个扩展到 7 个参与评分（line_spacing 仅记录不评分），权重重新分配（总计 = 1.0）：
+总维度从 4 个扩展到 6 个参与评分（line_spacing 仅记录不评分），权重重新分配（总计 = 1.0）：
 
 | 维度 | 权重 | 理由 |
 |------|------|------|
@@ -114,9 +114,9 @@ def _fingerprint_key(fp):
 
 | 文件 | 函数 | 变更描述 |
 |------|------|---------|
-| `style_analyzer.py` | `compute_effective_fingerprint()` | 新增提取 font, space_before, space_after, line_spacing |
+| `style_analyzer.py` | `compute_effective_fingerprint()` | 新增字段：`font`、`space_before`、`space_after`、`line_spacing`；fallback 行为：font→默认字体，spacing→0/null，line_spacing→null（绝对Pt值亦规范化为null） |
 | `style_analyzer.py` | `_fingerprint_key()` | 加入 font 参与聚类 key |
-| `style_transfer.py` | `_score()` | 按新权重表重写评分逻辑 |
+| `style_transfer.py` | `_score()` | 按新权重表重写评分逻辑（6 个维度：size 2/8, bold/italic/align 各 1/8, font 2/8, space_before/space_after 各 0.5/8） |
 
 ---
 
@@ -134,3 +134,4 @@ def _fingerprint_key(fp):
 - 对《招标书》重新运行 `style_analyzer.py`，生成的 `fingerprints.json` 中各组的 `font` 字段能有效区分出不同角色的段落（如黑体组 vs 宋体组）
 - 指纹组数量应有所增加（之前仅 5 组，增强后预期按字体区分会有更多组）
 - 重新生成 `style_profile.json` 后，样式迁移的准确率相比之前有明显提升
+- 量化指标（可选）：样式迁移后 `apply_style` 操作与预期角色匹配率 ≥ 80%
