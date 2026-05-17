@@ -25,7 +25,7 @@ def compute_effective_fingerprint(paragraph):
     """
     Compute effective format fingerprint for a paragraph, merging style attributes and run-level overrides.
     For multi-run paragraphs, uses the first run with an explicit value.
-    Returns dict with: size, bold, italic, align.
+    Returns dict with: size, bold, italic, align, font, space_before, space_after, line_spacing.
     """
     style = paragraph.style
     style_font = style.font if hasattr(style, 'font') else None
@@ -77,12 +77,50 @@ def compute_effective_fingerprint(paragraph):
     style_font_name = style_font.name if style_font and hasattr(style_font, 'name') else None
     eff_font = run_font if run_font is not None else style_font_name
 
+    # Spacing fields (paragraph-level)
+    pf = paragraph.paragraph_format if hasattr(paragraph, 'paragraph_format') else None
+
+    def _get_pt_str(val):
+        """Convert Pt value to 'Xpt' string, or None if not set."""
+        if val is None:
+            return None
+        try:
+            return f"{val.pt}pt"
+        except AttributeError:
+            return None
+
+    sb_val = pf.space_before if pf else None
+    if sb_val is None and style_pf:
+        sb_val = style_pf.space_before
+    eff_space_before = _get_pt_str(sb_val)
+
+    sa_val = pf.space_after if pf else None
+    if sa_val is None and style_pf:
+        sa_val = style_pf.space_after
+    eff_space_after = _get_pt_str(sa_val)
+
+    # Line spacing: only support multiplier (float), not absolute Pt
+    ls_val = pf.line_spacing if pf else None
+    if ls_val is None and style_pf:
+        ls_val = style_pf.line_spacing
+    # python-docx: if line_spacing is a Pt object, it's absolute mode — not supported
+    if ls_val is not None:
+        try:
+            ls_val.pt  # this only works if it's a Pt (absolute), which we don't support
+            ls_val = None
+        except AttributeError:
+            pass  # it's a float (multiplier mode) — keep it
+    eff_line_spacing = ls_val
+
     return {
         "size": size_str,
         "bold": eff_bold,
         "italic": eff_italic,
         "align": eff_align,
         "font": eff_font,
+        "space_before": eff_space_before,
+        "space_after": eff_space_after,
+        "line_spacing": eff_line_spacing,
     }
 
 
