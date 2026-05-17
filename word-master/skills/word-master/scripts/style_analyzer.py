@@ -11,7 +11,7 @@ CHAPTER_PATTERN = re.compile(
 
 def _fingerprint_key(fp):
     """Convert fingerprint dict to a hashable key for grouping."""
-    return (fp.get("size"), fp.get("bold"), fp.get("italic"), fp.get("align"))
+    return (fp.get("size"), fp.get("bold"), fp.get("italic"), fp.get("align"), fp.get("font"))
 
 
 def _get_effective_value(run_val, style_val):
