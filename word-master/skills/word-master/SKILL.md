@@ -19,6 +19,8 @@ description: >
 | `${SKILL_DIR}/scripts/docx_reader.py` | Read DOCX, output rich-text Markdown with paragraph IDs |
 | `${SKILL_DIR}/scripts/docx_editor.py` | Execute JSON DSL operations on DOCX |
 | `${SKILL_DIR}/scripts/docx_diff.py` | Compare before/after DOCX, generate diff report |
+| `${SKILL_DIR}/scripts/style_analyzer.py` | Extract format fingerprints from a template DOCX |
+| `${SKILL_DIR}/scripts/style_transfer.py` | Apply template style profile to a target DOCX |
 
 ## Format Templates
 
@@ -102,6 +104,40 @@ Original file backed up as `document.docx.bak`.
 
 ```bash
 python ${SKILL_DIR}/scripts/docx_diff.py document.docx document_modified.docx
+```
+
+---
+
+## Workflow 3: Style Transfer (样式迁移)
+
+> 学习源模板文档的正文格式风格，应用到目标草稿文档。
+
+### Step 1: 提取源模板格式指纹
+
+```bash
+python ${SKILL_DIR}/scripts/style_analyzer.py template.docx --output fingerprints.json
+```
+
+### Step 2: AI 推断样式角色
+
+将 `fingerprints.json` 内容提供给 AI，请求生成 `style_profile.json`。
+AI 应根据字号、加粗、对齐等特征推断 Word 内置样式（Heading 1, Normal 等）。
+
+### Step 3: 应用样式到目标草稿
+
+```bash
+python ${SKILL_DIR}/scripts/style_transfer.py --profile style_profile.json draft.docx output.docx
+```
+
+可选参数：
+- `--review`：应用前暂停，供人工确认 profile
+- `--skip-head N`：跳过前 N 个段落（排除封面）
+- `--skip-tail N`：跳过后 N 个段落（排除签字页）
+
+### Step 4: 验证结果
+
+```bash
+python ${SKILL_DIR}/scripts/docx_diff.py draft.docx output.docx
 ```
 
 ---
