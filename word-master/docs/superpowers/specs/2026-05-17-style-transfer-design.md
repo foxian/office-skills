@@ -110,7 +110,14 @@ python style_transfer.py --profile style_profile.json draft.docx output.docx
 1. **获取 style profile**：
    - 有 `--profile`：直接加载，跳过分析阶段（0 token 消耗）。
    - 无 `--profile`：调用 `style_analyzer.py` → 调用 LLM 推理 → 生成 `style_profile.json`，同时保存到磁盘供下次复用。
-2. **就地应用样式**到 `draft.docx`，保存为 `output.docx`（原文件不被修改，自动备份）。
+2. **生成 DSL 操作指令**：遍历 `draft.docx` 段落，识别正文段落，对每个正文段落做指纹匹配，生成 `apply_style` 操作列表，例如：
+   ```json
+   [
+     {"op": "apply_style", "target": "p1", "style": "Heading 1"},
+     {"op": "apply_style", "target": "p3", "style": "Normal"}
+   ]
+   ```
+3. **委托 `docx_editor.apply_operations()` 执行**：`style_transfer.py` 不自己操作 `python-docx`，而是直接调用现有的 `docx_editor` 执行引擎，复用其备份机制和安全执行逻辑。`style_transfer.py` 是纯粹的**规划器（大脑）**，`docx_editor.py` 是唯一的**执行器（手）**。
 
 ### 4.3 审核模式 (Review Mode)
 
@@ -130,5 +137,5 @@ python style_transfer.py template.docx draft.docx output.docx --review
 ## 6. 后续实施步骤
 1. **实现 `style_analyzer.py`**：段落遍历 + 有效指纹计算 + A+C 正文过滤 + 聚类去重。
 2. **设计 LLM 推理 Prompt**：将指纹摘要转化为 `style_profile.json` 的 Prompt 模板。
-3. **实现应用逻辑**：读取 `draft.docx`，识别正文段落，指纹匹配，就地 `apply_style`。
+3. **实现应用逻辑**：读取 `draft.docx`，识别正文段落，指纹匹配，生成 `apply_style` DSL 列表，调用 `docx_editor.apply_operations()` 执行。
 4. **集成与测试**：用真实的含假样式、混合结构（封面+正文+签字页）的文档验证端到端效果。
