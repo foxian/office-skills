@@ -24,7 +24,7 @@ def _score(fp, role_fp):
     """
     Calculate similarity score between two fingerprints (0.0 ~ 1.0).
     Weights: size=0.25, bold=0.125, italic=0.125, align=0.125,
-             font=0.25, space_before=0.0625, space_after=0.0625.
+             font=0.125, color=0.125, space_before=0.0625, space_after=0.0625.
     line_spacing is recorded in fingerprint but not scored.
     Size uses linear decay: max(0, 1 - diff/10).
 
@@ -65,15 +65,23 @@ def _score(fp, role_fp):
         weight_sum += 0.125
         score += 0.125 if fp.get("align") == role_fp.get("align") else 0.0
 
-    # font (weight=0.25): exact match
+    # font (weight=0.125): exact match
     f1 = fp.get("font")
     f2 = role_fp.get("font")
     if f1 is not None:
-        weight_sum += 0.25
+        weight_sum += 0.125
         if f2 is None:
             pass  # fp has font, role doesn't — no score
         elif f1 == f2:
-            score += 0.25
+            score += 0.125
+
+    # color (weight=0.125): exact match on combined "rgb:XXX" or "theme:XXX" string
+    c1 = fp.get("color")
+    c2 = role_fp.get("color")
+    if c1 is not None:
+        weight_sum += 0.125
+        if c2 is not None and c1 == c2:
+            score += 0.125
 
     # space_before (weight=0.0625): numeric comparison within 0.5pt tolerance
     sb1 = fp.get("space_before")
@@ -143,15 +151,27 @@ def match_fingerprint_to_role(fp, profile, threshold=0.6):
 
 def generate_apply_ops(draft_path, profile, threshold=0.6, skip_head=0, skip_tail=0):
     """
-    Walk draft.docx paragraphs, match fingerprints, generate apply_style DSL list.
-    When fingerprint matching is inconclusive (e.g., "fake style" documents with
-    no run-level overrides), falls back to text pattern matching for headings.
-    skip_head/skip_tail: skip first/last N paragraphs (human fallback).
+    Walk draft.docx paragraphs, match fingerprints, generate DSL op list.
+    Output structure:
+      1. update_style_definition ops (one per role in profile) — at the top
+      2. apply_style ops (one per matched paragraph) with clear_run_formats=True
     """
+    # --- Phase 1: generate update_style_definition ops ---
+    ops = []
+    for entry in profile.get("roles", []):
+        role = entry.get("role")
+        fp = entry.get("fingerprint")
+        if role and fp:
+            ops.append({
+                "op": "update_style_definition",
+                "style": role,
+                "fingerprint": fp,
+            })
+
+    # --- Phase 2: generate apply_style ops per paragraph ---
     doc = docx.Document(draft_path)
     paras = doc.paragraphs
     n = len(paras)
-    ops = []
     available_roles = {entry["role"] for entry in profile.get("roles", [])}
 
     for i, para in enumerate(paras):
@@ -163,13 +183,16 @@ def generate_apply_ops(draft_path, profile, threshold=0.6, skip_head=0, skip_tai
         fp = compute_effective_fingerprint(para)
         role = match_fingerprint_to_role(fp, profile, threshold)
         if role is None:
-            # Fallback: use text pattern when fingerprint is uninformative
             role = _infer_role_from_text(text, profile)
         if role is None and "Normal" in available_roles:
-            # Default: paragraphs that don't match any heading pattern are body text
             role = "Normal"
         if role:
-            ops.append({"op": "apply_style", "target": f"p{i}", "style": role})
+            ops.append({
+                "op": "apply_style",
+                "target": f"p{i}",
+                "style": role,
+                "clear_run_formats": True,
+            })
     return ops
 
 
