@@ -274,4 +274,4 @@ AI must output JSON arrays containing edit operations.
 | space_before | string | 段前距，如 `"12.0pt"` |
 | space_after | string | 段后距 |
 | line_spacing | number | 行距倍数（1.5=1.5倍） |
-| color | string | 颜色，如 `"rgb:FF0000"` |
+| color | string | 颜色，如 `"rgb:FF0000"` 或 `"theme:ACCENT_1"` |

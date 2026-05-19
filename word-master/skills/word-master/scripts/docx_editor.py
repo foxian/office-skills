@@ -407,13 +407,19 @@ def _apply_apply_style(doc, params):
                     run.bold = None
                     run.italic = None
                     run.font.name = None
+                    # Clear both rgb and theme color overrides
                     run.font.color.rgb = None
-                    # Clear East Asia font override
+                    run.font.color.theme_color = None
+                    # Clear XML-level overrides (East Asia font, color element)
                     rpr = run._element.find(qn('w:rPr'))
                     if rpr is not None:
                         rfonts = rpr.find(qn('w:rFonts'))
                         if rfonts is not None:
                             rfonts.attrib.pop(qn('w:eastAsia'), None)
+                        # Remove w:color element to fully clear color override
+                        color_elem = rpr.find(qn('w:color'))
+                        if color_elem is not None:
+                            rpr.remove(color_elem)
         else:
             print(f"[WARNING] op=apply_style: style '{style_name}' not found, skipping.")
     except (ValueError, AttributeError, IndexError):
@@ -488,16 +494,58 @@ def _apply_update_style_definition(doc, params):
         rfonts.set(qn('w:eastAsia'), font_name)
 
     # Color
+    # python-docx's ColorFormat clears the entire w:color element when setting
+    # rgb=None or theme_color=None, so we must manipulate XML directly to set
+    # one attribute while clearing the other.
     color = fp.get('color')
     if color:
+        from docx.oxml.ns import qn
+        rpr = style._element.get_or_add_rPr()
+        # Remove existing w:color element to start clean
+        for old_color in rpr.findall(qn('w:color')):
+            rpr.remove(old_color)
         if color.startswith('rgb:'):
             from docx.shared import RGBColor
             hex_str = color[4:].lstrip('#')
             if hex_str:
-                style.font.color.rgb = RGBColor.from_string(hex_str)
+                color_elem = rpr.makeelement(qn('w:color'), {
+                    qn('w:val'): hex_str,
+                })
+                rpr.append(color_elem)
+        elif color.startswith('theme:'):
+            from docx.enum.dml import MSO_THEME_COLOR
+            theme_map = {
+                "DARK_1": MSO_THEME_COLOR.DARK_1,
+                "LIGHT_1": MSO_THEME_COLOR.LIGHT_1,
+                "DARK_2": MSO_THEME_COLOR.DARK_2,
+                "LIGHT_2": MSO_THEME_COLOR.LIGHT_2,
+                "ACCENT_1": MSO_THEME_COLOR.ACCENT_1,
+                "ACCENT_2": MSO_THEME_COLOR.ACCENT_2,
+                "ACCENT_3": MSO_THEME_COLOR.ACCENT_3,
+                "ACCENT_4": MSO_THEME_COLOR.ACCENT_4,
+                "ACCENT_5": MSO_THEME_COLOR.ACCENT_5,
+                "ACCENT_6": MSO_THEME_COLOR.ACCENT_6,
+                "HYPERLINK": MSO_THEME_COLOR.HYPERLINK,
+                "FOLLOWED_HYPERLINK": MSO_THEME_COLOR.FOLLOWED_HYPERLINK,
+                "TEXT_1": MSO_THEME_COLOR.DARK_1,
+                "TEXT_2": MSO_THEME_COLOR.LIGHT_1,
+                "BACKGROUND_1": MSO_THEME_COLOR.LIGHT_1,
+                "BACKGROUND_2": MSO_THEME_COLOR.LIGHT_2,
+            }
+            theme_name = color[6:].upper()
+            if theme_name in theme_map:
+                theme_val = theme_map[theme_name]
+                color_elem = rpr.makeelement(qn('w:color'), {
+                    qn('w:themeColor'): theme_val.xml_value,
+                })
+                rpr.append(color_elem)
     elif color == '':
         # Explicitly clear color
-        style.font.color.rgb = None
+        from docx.oxml.ns import qn
+        rpr = style._element.find(qn('w:rPr'))
+        if rpr is not None:
+            for old_color in rpr.findall(qn('w:color')):
+                rpr.remove(old_color)
 
     # Alignment
     align_str = fp.get('align')
