@@ -68,6 +68,43 @@ def _apply_font_attributes(run, params):
         run.bold = params["bold"]
     if "italic" in params:
         run.italic = params["italic"]
+    if "color_rgb" in params:
+        from docx.shared import RGBColor
+        hex_str = params["color_rgb"].lstrip("#")
+        if hex_str:
+            run.font.color.rgb = RGBColor.from_string(hex_str)
+        else:
+            run.font.color.rgb = None
+            from docx.oxml.ns import qn
+            rpr = run._element.find(qn('w:rPr'))
+            if rpr is not None:
+                color_elem = rpr.find(qn('w:color'))
+                if color_elem is not None:
+                    rpr.remove(color_elem)
+    if "color_theme" in params:
+        from docx.oxml.ns import qn
+        from docx.enum.dml import MSO_THEME_COLOR
+        theme_map = {
+            "DARK_1": MSO_THEME_COLOR.DARK_1,
+            "LIGHT_1": MSO_THEME_COLOR.LIGHT_1,
+            "DARK_2": MSO_THEME_COLOR.DARK_2,
+            "LIGHT_2": MSO_THEME_COLOR.LIGHT_2,
+            "ACCENT_1": MSO_THEME_COLOR.ACCENT_1,
+            "ACCENT_2": MSO_THEME_COLOR.ACCENT_2,
+            "ACCENT_3": MSO_THEME_COLOR.ACCENT_3,
+            "ACCENT_4": MSO_THEME_COLOR.ACCENT_4,
+            "ACCENT_5": MSO_THEME_COLOR.ACCENT_5,
+            "ACCENT_6": MSO_THEME_COLOR.ACCENT_6,
+            "HYPERLINK": MSO_THEME_COLOR.HYPERLINK,
+            "FOLLOWED_HYPERLINK": MSO_THEME_COLOR.FOLLOWED_HYPERLINK,
+            "TEXT_1": MSO_THEME_COLOR.DARK_1,
+            "TEXT_2": MSO_THEME_COLOR.LIGHT_1,
+            "BACKGROUND_1": MSO_THEME_COLOR.LIGHT_1,
+            "BACKGROUND_2": MSO_THEME_COLOR.LIGHT_2,
+        }
+        theme_name = params["color_theme"].upper()
+        if theme_name in theme_map:
+            run.font.color.theme_color = theme_map[theme_name]
 
 def _apply_set_font(paragraph, params):
     """Apply font settings to paragraph runs or specific matched text."""
@@ -393,20 +430,129 @@ def _apply_set_page_setup(doc, params):
         print("[WARNING] op=set_page_setup: section index out of bounds, skipping.")
 
 
+def _apply_update_style_definition(doc, params):
+    """Overwrite a built-in style's font/paragraph format with fingerprint values."""
+    from docx.shared import Pt
+    from docx.enum.text import WD_ALIGN_PARAGRAPH
+    style_name = params.get('style')
+    fp = params.get('fingerprint', {})
+    if not style_name or not fp:
+        print("[WARNING] op=update_style_definition: missing style or fingerprint, skipping.")
+        return
+    if style_name not in doc.styles:
+        print(f"[WARNING] op=update_style_definition: style '{style_name}' not found, skipping.")
+        return
+
+    style = doc.styles[style_name]
+
+    # Font size
+    size_str = fp.get('size')
+    if size_str:
+        try:
+            style.font.size = Pt(float(size_str.rstrip('pt')))
+        except (ValueError, AttributeError):
+            pass
+
+    # Bold / italic
+    if fp.get('bold') is not None:
+        style.font.bold = fp['bold']
+    if fp.get('italic') is not None:
+        style.font.italic = fp['italic']
+
+    # Western font (name)
+    font_name = fp.get('font')
+    if font_name:
+        style.font.name = font_name
+        # Also set East Asia (Chinese) font via XML
+        from docx.oxml.ns import qn
+        rpr = style._element.get_or_add_rPr()
+        rfonts = rpr.find(qn('w:rFonts'))
+        if rfonts is None:
+            rfonts = rpr.makeelement(qn('w:rFonts'), {})
+            rpr.insert(0, rfonts)
+        rfonts.set(qn('w:eastAsia'), font_name)
+
+    # Color
+    color = fp.get('color')
+    if color:
+        if color.startswith('rgb:'):
+            from docx.shared import RGBColor
+            hex_str = color[4:].lstrip('#')
+            if hex_str:
+                style.font.color.rgb = RGBColor.from_string(hex_str)
+    elif color == '':
+        # Explicitly clear color
+        style.font.color.rgb = None
+
+    # Alignment
+    align_str = fp.get('align')
+    if align_str:
+        align_map = {
+            'left': WD_ALIGN_PARAGRAPH.LEFT,
+            'center': WD_ALIGN_PARAGRAPH.CENTER,
+            'right': WD_ALIGN_PARAGRAPH.RIGHT,
+            'justify': WD_ALIGN_PARAGRAPH.JUSTIFY,
+        }
+        if align_str in align_map:
+            style.paragraph_format.alignment = align_map[align_str]
+
+    # Spacing
+    sb = fp.get('space_before')
+    if sb:
+        try:
+            style.paragraph_format.space_before = Pt(float(sb.rstrip('pt')))
+        except (ValueError, AttributeError):
+            pass
+
+    sa = fp.get('space_after')
+    if sa:
+        try:
+            style.paragraph_format.space_after = Pt(float(sa.rstrip('pt')))
+        except (ValueError, AttributeError):
+            pass
+
+    # Line spacing (multiplier only)
+    ls = fp.get('line_spacing')
+    if ls is not None:
+        style.paragraph_format.line_spacing = ls
+
+
 def _backup_file(filepath):
     """Create a .bak backup of the original file before modifying."""
     bak_path = filepath + '.bak'
     shutil.copy2(filepath, bak_path)
     return bak_path
 
+def _clear_heading_colors(doc):
+    """Clear colors from built-in Heading styles to prevent style-based colors."""
+    from docx.oxml.ns import qn
+    heading_styles = ['Heading 1', 'Heading 2', 'Heading 3', 'Heading 4',
+                      'Heading 5', 'Heading 6', 'Heading 7', 'Heading 8', 'Heading 9']
+    for style_name in heading_styles:
+        if style_name in doc.styles:
+            style = doc.styles[style_name]
+            try:
+                style.font.color.rgb = None
+                style.font.color.theme_color = None
+            except:
+                pass
+            style_elem = style._element
+            color_elems = style_elem.findall(qn('w:color'))
+            for color_elem in color_elems:
+                style_elem.remove(color_elem)
+
+
 def apply_operations(filepath, ops, outpath=None):
     doc = docx.Document(filepath)
     if outpath is None:
         outpath = filepath
-    
+
     # Backup original before any modification
     if os.path.exists(filepath):
         _backup_file(filepath)
+
+    # Clear Heading style colors first to prevent style-based colors from overriding
+    _clear_heading_colors(doc)
         
     for op in ops:
         if op['op'] == 'rewrite_paragraph':
@@ -453,6 +599,8 @@ def apply_operations(filepath, ops, outpath=None):
             _apply_apply_style(doc, op)
         elif op['op'] == 'set_page_setup':
             _apply_set_page_setup(doc, op)
+        elif op['op'] == 'update_style_definition':
+            _apply_update_style_definition(doc, op)
 
     doc.save(outpath)
 
