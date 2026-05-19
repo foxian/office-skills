@@ -538,25 +538,6 @@ def _backup_file(filepath):
     shutil.copy2(filepath, bak_path)
     return bak_path
 
-def _clear_heading_colors(doc):
-    """Clear colors from built-in Heading styles to prevent style-based colors."""
-    from docx.oxml.ns import qn
-    heading_styles = ['Heading 1', 'Heading 2', 'Heading 3', 'Heading 4',
-                      'Heading 5', 'Heading 6', 'Heading 7', 'Heading 8', 'Heading 9']
-    for style_name in heading_styles:
-        if style_name in doc.styles:
-            style = doc.styles[style_name]
-            try:
-                style.font.color.rgb = None
-                style.font.color.theme_color = None
-            except:
-                pass
-            style_elem = style._element
-            color_elems = style_elem.findall(qn('w:color'))
-            for color_elem in color_elems:
-                style_elem.remove(color_elem)
-
-
 def apply_operations(filepath, ops, outpath=None):
     doc = docx.Document(filepath)
     if outpath is None:
@@ -566,9 +547,6 @@ def apply_operations(filepath, ops, outpath=None):
     if os.path.exists(filepath):
         _backup_file(filepath)
 
-    # Clear Heading style colors first to prevent style-based colors from overriding
-    _clear_heading_colors(doc)
-        
     for op in ops:
         if op['op'] == 'rewrite_paragraph':
             idx = int(op['target'].replace('p', ''))
