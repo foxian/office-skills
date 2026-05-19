@@ -398,7 +398,22 @@ def _apply_apply_style(doc, params):
             print(f"[WARNING] op=apply_style: paragraph index {idx} out of bounds, skipping.")
             return
         if style_name in doc.styles:
-            doc.paragraphs[idx].style = style_name
+            para = doc.paragraphs[idx]
+            para.style = style_name
+            if params.get('clear_run_formats'):
+                from docx.oxml.ns import qn
+                for run in para.runs:
+                    run.font.size = None
+                    run.bold = None
+                    run.italic = None
+                    run.font.name = None
+                    run.font.color.rgb = None
+                    # Clear East Asia font override
+                    rpr = run._element.find(qn('w:rPr'))
+                    if rpr is not None:
+                        rfonts = rpr.find(qn('w:rFonts'))
+                        if rfonts is not None:
+                            rfonts.attrib.pop(qn('w:eastAsia'), None)
         else:
             print(f"[WARNING] op=apply_style: style '{style_name}' not found, skipping.")
     except (ValueError, AttributeError, IndexError):
