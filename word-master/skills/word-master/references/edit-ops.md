@@ -209,6 +209,7 @@ AI must output JSON arrays containing edit operations.
 |------|------|------|------|
 | target | string | ✅ | 目标段落 ID |
 | style | string | ✅ | 样式名 |
+| clear_run_formats | boolean | 否 | 赋样式后是否清除段落内所有 run 的手动格式覆盖（bold/size/font 等设为 None），默认 false |
 
 ## set_page_setup 操作
 
@@ -234,3 +235,43 @@ AI must output JSON arrays containing edit operations.
 | margin_right | string | 否 | 右侧边距 |
 | orientation | string | 否 | 纸张方向：`portrait`（纵向）或 `landscape`（横向） |
 | section | int | 否 | 节索引，默认 `0` |
+
+## update_style_definition 操作
+
+修改文档内置样式的字体与段落格式定义，影响所有应用了该样式的段落。
+
+```json
+{
+  "op": "update_style_definition",
+  "style": "Heading 1",
+  "fingerprint": {
+    "size": "16.0pt",
+    "font": "黑体",
+    "bold": true,
+    "align": "center",
+    "space_before": "12.0pt",
+    "space_after": "6.0pt",
+    "line_spacing": 1.5,
+    "color": "rgb:000000"
+  }
+}
+```
+
+| 参数 | 类型 | 必填 | 说明 |
+|------|------|------|------|
+| style | string | ✅ | 内置样式名，如 "Heading 1"、"Normal" |
+| fingerprint | object | ✅ | 格式指纹对象，与 style_profile.json 中的 fingerprint 格式相同；各字段均为可选 |
+
+**fingerprint 字段：**
+
+| 字段 | 类型 | 说明 |
+|------|------|------|
+| size | string | 字号，如 `"16.0pt"` |
+| font | string | 中文/西文字体名（同时写入 w:eastAsia），如 `"黑体"` |
+| bold | boolean | 加粗 |
+| italic | boolean | 斜体 |
+| align | string | 对齐：left/center/right/justify |
+| space_before | string | 段前距，如 `"12.0pt"` |
+| space_after | string | 段后距 |
+| line_spacing | number | 行距倍数（1.5=1.5倍） |
+| color | string | 颜色，如 `"rgb:FF0000"` |
