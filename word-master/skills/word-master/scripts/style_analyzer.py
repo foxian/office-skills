@@ -246,7 +246,7 @@ def _detect_list_type(paragraph, doc) -> str | None:
                                             return "List Bullet"
                                         else:
                                             return "List Number"
-        except Exception:
+        except (AttributeError, KeyError, TypeError):
             pass
 
     # 2. 降级：样式名关键字判定

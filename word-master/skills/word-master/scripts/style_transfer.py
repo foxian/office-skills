@@ -7,6 +7,7 @@ import os
 # Reuse fingerprint computation from style_analyzer
 sys.path.insert(0, os.path.dirname(__file__))
 from style_analyzer import _detect_list_type
+from validate_style_profile import validate_profile
 
 # Text patterns for semantic role inference (fallback when fingerprint is uninformative)
 _HEADING1_PATTERN = re.compile(
@@ -155,9 +156,8 @@ def generate_apply_ops(draft_path, profile, threshold=0.6, skip_head=0, skip_tai
     Pipeline:
       1. Level 0: Direct Heading Name Match
       2. Level 1: XML Numbering (numPr) & Text Bullet prefix Match (Strict Handoff)
-      3. Level 2: Text Pattern Regex Fallback (body-like styles only)
-      4. Level 3: Default style names (Normal/Body Text) Match
-      5. Level 4: Default to 'Normal'
+      3. Level 2: Body-style (Normal/Body Text) — text pattern first, then default Normal
+      4. Level 3: Absolute Fallback to 'Normal'
     """
     # --- Phase 1: generate update_style_definition ops ---
     ops = []
@@ -197,20 +197,16 @@ def generate_apply_ops(draft_path, profile, threshold=0.6, skip_head=0, skip_tai
             if list_type is not None:
                 role = list_type if list_type in available_roles else "Normal"
 
-        # Level 2: Text Pattern Fallback (only for body-like styles)
-        # Non-heading, non-body styles (Subtitle, Title, etc.) should NOT
-        # be promoted to headings via text patterns
+        # Level 2: Body-style paragraphs — try text pattern, then default to Normal
+        # Non-body styles (Subtitle, Title, etc.) skip text patterns to prevent
+        # misidentification as headings
         if role is None:
             if style_name in ("Normal", "Body Text", "Default Paragraph Style"):
                 role = _infer_role_from_text(text, profile)
+                if role is None and "Normal" in available_roles:
+                    role = "Normal"
 
-        # Level 3: Standard Body Match (default Normal for body-like styles
-        # that didn't match any text pattern)
-        if role is None:
-            if style_name in ("Normal", "Body Text", "Default Paragraph Style"):
-                role = "Normal" if "Normal" in available_roles else None
-
-        # Level 4: Absolute Fallback
+        # Level 3: Absolute Fallback
         if role is None:
             role = "Normal" if "Normal" in available_roles else None
 
@@ -242,8 +238,6 @@ def run(template_path, draft_path, output_path,
     # --- Phase 1: Get style_profile ---
 
     # --- Validate profile format ---
-    sys.path.insert(0, os.path.dirname(__file__))
-    from validate_style_profile import validate_profile
 
     if profile_path:
         print(f"[INFO] Loading existing profile: {profile_path}")
