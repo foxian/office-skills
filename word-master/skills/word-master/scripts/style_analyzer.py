@@ -277,5 +277,3 @@ if __name__ == "__main__":
     with open(args.output, "w", encoding="utf-8") as f:
         json.dump(fingerprints, f, ensure_ascii=False, indent=2)
     print(f"[INFO] Extracted {len(fingerprints)} fingerprint groups → {args.output}")
-
-
