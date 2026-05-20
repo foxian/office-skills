@@ -121,7 +121,32 @@ python ${SKILL_DIR}/scripts/style_analyzer.py template.docx --output fingerprint
 ### Step 2: AI 推断样式角色
 
 将 `fingerprints.json` 内容提供给 AI，请求生成 `style_profile.json`。
-AI 应根据字号、加粗、对齐等特征推断 Word 内置样式（Heading 1, Normal 等）。
+
+**格式约束**：必须使用 `roles` 列表结构，每个 role 包含：
+- `role`：Word 内置样式名（必须是下表中的有效值之一）
+- `fingerprint`：格式指纹对象
+
+**支持的 role 类型**：
+| 类别 | 可用值 |
+|------|--------|
+| 标题 | `Heading 1`, `Heading 2`, `Heading 3`, `Heading 4`, `Heading 5`, `Heading 6`, `Heading 7`, `Heading 8`, `Heading 9` |
+| 正文 | `Normal` |
+| 列表 | `List Bullet`, `List Number` |
+
+**示例结构**：
+```json
+{
+  "roles": [
+    {"role": "Heading 1", "fingerprint": {"size": "14.0pt", "font": "黑体", "align": "center", "color": null}},
+    {"role": "Heading 2", "fingerprint": {"size": "14.0pt", "font": "黑体", "align": "justify", "color": null}},
+    {"role": "Normal", "fingerprint": {"size": "14.0pt", "font": "宋体", "align": "justify", "color": null}}
+  ]
+}
+```
+
+> **注意**：`style_transfer.py` 会自动验证 profile 格式，role 类型不在白名单中时会报错并退出。
+
+> **匹配规则**：样式转换采用精确名称匹配。目标文档中 `Heading X` 样式会套用模板中对应 `Heading X` 的 fingerprint；`Body Text` 会降级套用 `Normal` 的 fingerprint；其他未匹配样式保持原样。
 
 ### Step 3: 应用样式到目标草稿
 
