@@ -187,10 +187,12 @@ def extract_fingerprints(filepath, min_cluster_size=4):
     return result
 
 
-def _detect_list_type(paragraph, doc):
+def _detect_list_type(paragraph, doc) -> str | None:
     """
     Detect if a paragraph is a Word native list.
     Returns "List Bullet", "List Number", or None.
+    Uses <w:numPr> XML node as primary signal; falls back to
+    style name keywords and text prefix characters.
     """
     pPr = paragraph._element.get_or_add_pPr()
     numPr = pPr.find(qn('w:numPr'))
@@ -244,7 +246,7 @@ def _detect_list_type(paragraph, doc):
                                             return "List Bullet"
                                         else:
                                             return "List Number"
-        except (AttributeError, KeyError, TypeError):
+        except Exception:
             pass
 
     # 2. 降级：样式名关键字判定
@@ -253,13 +255,15 @@ def _detect_list_type(paragraph, doc):
         return "List Bullet"
     if 'list number' in style_name:
         return "List Number"
+    if 'list' in style_name:
+        if re.match(r'^([0-9a-zA-Z]+|[一二三四五六七八九十]+)[\.、\s]', paragraph.text.strip()):
+            return "List Number"
+        return "List Bullet"
 
-    # 3. 降级：文本前缀正则匹配
+    # 3. 降级：文本前缀匹配（仅匹配 bullet 符号；不对数字前缀判定以防止拦截标题级联）
     stripped = paragraph.text.strip()
     if stripped.startswith(('•', '·', '-', '*', 'o', '▪', '■', '◆', '▲')):
         return "List Bullet"
-    if re.match(r'^([0-9a-zA-Z]+|[一二三四五六七八九十]+)[\.、\s]', stripped):
-        return "List Number"
 
     return None
 
