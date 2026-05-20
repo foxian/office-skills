@@ -1,13 +1,12 @@
 import json
 import sys
 
-# Valid semantic role names whitelist
+# 声明合法角色白名单
 VALID_ROLES = {
     "Heading 1", "Heading 2", "Heading 3", "Heading 4",
     "Heading 5", "Heading 6", "Heading 7", "Heading 8", "Heading 9",
     "Normal", "List Bullet"
 }
-
 
 def validate_profile(profile_or_path):
     """
@@ -55,7 +54,6 @@ def validate_profile(profile_or_path):
 
     print("[INFO] style_profile.json 格式验证通过")
     return True
-
 
 if __name__ == "__main__":
     if len(sys.argv) < 2:
