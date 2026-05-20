@@ -6,7 +6,7 @@ import os
 
 # Reuse fingerprint computation from style_analyzer
 sys.path.insert(0, os.path.dirname(__file__))
-from style_analyzer import compute_effective_fingerprint
+from style_analyzer import compute_effective_fingerprint, _detect_list_type
 
 # Text patterns for semantic role inference (fallback when fingerprint is uninformative)
 _HEADING1_PATTERN = re.compile(
@@ -151,10 +151,13 @@ def match_fingerprint_to_role(fp, profile, threshold=0.6):
 
 def generate_apply_ops(draft_path, profile, threshold=0.6, skip_head=0, skip_tail=0):
     """
-    Walk draft.docx paragraphs, match fingerprints, generate DSL op list.
-    Output structure:
-      1. update_style_definition ops (one per role in profile) — at the top
-      2. apply_style ops (one per matched paragraph) with clear_run_formats=True
+    Walk draft.docx paragraphs, match roles via deterministic cascade pipeline.
+    Pipeline:
+      1. Level 0: Direct Heading Name Match
+      2. Level 1: XML Numbering (numPr) & Text Bullet prefix Match (Strict Handoff)
+      3. Level 2: Default style names (Normal/Body Text) Match
+      4. Level 3: Text pattern Regex Fallback
+      5. Level 4: Default to 'Normal'
     """
     # --- Phase 1: generate update_style_definition ops ---
     ops = []
@@ -180,12 +183,33 @@ def generate_apply_ops(draft_path, profile, threshold=0.6, skip_head=0, skip_tai
         text = para.text.strip()
         if not text:
             continue
-        fp = compute_effective_fingerprint(para)
-        role = match_fingerprint_to_role(fp, profile, threshold)
+
+        style_name = para.style.name
+        role = None
+
+        # Level 0: Direct Heading Match
+        if style_name.startswith("Heading ") and style_name in available_roles:
+            role = style_name
+
+        # Level 1: XML List / Bullet Prefix Match with Strict Handoff
+        if role is None:
+            list_type = _detect_list_type(para, doc)
+            if list_type is not None:
+                role = list_type if list_type in available_roles else "Normal"
+
+        # Level 2: Standard Body Match
+        if role is None:
+            if style_name in ("Normal", "Body Text", "Default Paragraph Style"):
+                role = "Normal" if "Normal" in available_roles else None
+
+        # Level 3: Text Pattern Fallback
         if role is None:
             role = _infer_role_from_text(text, profile)
-        if role is None and "Normal" in available_roles:
-            role = "Normal"
+
+        # Level 4: Absolute Fallback
+        if role is None:
+            role = "Normal" if "Normal" in available_roles else None
+
         if role:
             ops.append({
                 "op": "apply_style",
@@ -212,10 +236,18 @@ def run(template_path, draft_path, output_path,
         raise FileNotFoundError(f"[ERROR] Template file not found: {template_path}")
 
     # --- Phase 1: Get style_profile ---
+
+    # --- Validate profile format ---
+    sys.path.insert(0, os.path.dirname(__file__))
+    from validate_style_profile import validate_profile
+
     if profile_path:
         print(f"[INFO] Loading existing profile: {profile_path}")
         with open(profile_path, "r", encoding="utf-8") as f:
             profile = json.load(f)
+
+        if not validate_profile(profile):
+            raise ValueError(f"[ERROR] style_profile.json 格式验证失败，请检查上述错误")
     else:
         from style_analyzer import extract_fingerprints
         print(f"[INFO] Analyzing template: {template_path}")
