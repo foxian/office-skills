@@ -244,17 +244,15 @@ def _detect_list_type(paragraph, doc):
                                             return "List Bullet"
                                         else:
                                             return "List Number"
-        except Exception:
+        except (AttributeError, KeyError, TypeError):
             pass
 
     # 2. 降级：样式名关键字判定
     style_name = paragraph.style.name.lower()
-    if 'bullet' in style_name:
+    if 'list bullet' in style_name or 'list paragraph' in style_name:
         return "List Bullet"
-    if 'list' in style_name:
-        if re.match(r'^([0-9a-zA-Z]+|[一二三四五六七八九十]+)[\.、\s]', paragraph.text.strip()):
-            return "List Number"
-        return "List Bullet"
+    if 'list number' in style_name:
+        return "List Number"
 
     # 3. 降级：文本前缀正则匹配
     stripped = paragraph.text.strip()
