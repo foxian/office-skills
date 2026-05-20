@@ -166,13 +166,14 @@ def generate_apply_ops(draft_path, profile, skip_head=0, skip_tail=0):
             if list_type is not None:
                 role = list_type if list_type in available_roles else "Normal"
 
-        # Level 2: 精确匹配
-        if style_name in available_roles:
-            role = style_name
-        elif style_name in _FALLBACK_MAP:
-            fallback = _FALLBACK_MAP[style_name]
-            if fallback in available_roles:
-                role = fallback
+        # Level 2: 精确匹配（仅当 role 未被设置时）
+        if role is None:
+            if style_name in available_roles:
+                role = style_name
+            elif style_name in _FALLBACK_MAP:
+                fallback = _FALLBACK_MAP[style_name]
+                if fallback in available_roles:
+                    role = fallback
 
         # Level 3: Absolute Fallback
         if role is None:
