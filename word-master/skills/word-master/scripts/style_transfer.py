@@ -150,7 +150,7 @@ def match_fingerprint_to_role(fp, profile, threshold=0.6):
     return best_role if best_score >= threshold else None
 
 
-def generate_apply_ops(draft_path, profile, threshold=0.6, skip_head=0, skip_tail=0):
+def generate_apply_ops(draft_path, profile, skip_head=0, skip_tail=0):
     """
     Walk draft.docx paragraphs, match roles via deterministic cascade pipeline.
     Pipeline:
