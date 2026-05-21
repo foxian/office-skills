@@ -2,6 +2,7 @@ import docx
 import json
 import re
 import sys
+from collections import Counter
 from docx.enum.text import WD_ALIGN_PARAGRAPH
 from docx.oxml.ns import qn
 
@@ -255,7 +256,6 @@ def _average_fingerprints(fps: list[dict]) -> dict:
             return 0.0
 
     def _vote(values, tiebreak_order=None, skip_none=False):
-        from collections import Counter
         filtered = [v for v in values if v is not None] if skip_none else values
         if not filtered:
             return None
@@ -268,13 +268,13 @@ def _average_fingerprints(fps: list[dict]) -> dict:
             for priority in tiebreak_order:
                 if priority in winners:
                     return priority
-        # Fallback: first occurrence in fps
+        # Fallback: first occurrence in input order
         for v in values:
             if v in winners:
                 return v
         return winners[0]
 
-    bold_tiebreak = [False, None, True]
+    bool_tiebreak = [False, None, True]
 
     size_vals = [_pt_to_float(fp.get("size")) for fp in fps if fp.get("size") is not None]
     ls_vals = [fp.get("line_spacing") for fp in fps if fp.get("line_spacing") is not None]
@@ -285,8 +285,8 @@ def _average_fingerprints(fps: list[dict]) -> dict:
 
     return {
         "size": f"{sum(size_vals) / len(size_vals):.1f}pt" if size_vals else None,
-        "bold": _vote([fp.get("bold") for fp in fps], tiebreak_order=bold_tiebreak),
-        "italic": _vote([fp.get("italic") for fp in fps], tiebreak_order=bold_tiebreak),
+        "bold": _vote([fp.get("bold") for fp in fps], tiebreak_order=bool_tiebreak),
+        "italic": _vote([fp.get("italic") for fp in fps], tiebreak_order=bool_tiebreak),
         "align": _vote([fp.get("align") for fp in fps]),
         "font": _vote([fp.get("font") for fp in fps], skip_none=True),
         "color": _vote([fp.get("color") for fp in fps]),
