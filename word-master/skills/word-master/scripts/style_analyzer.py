@@ -26,7 +26,7 @@ def compute_effective_fingerprint(paragraph):
     """
     Compute effective format fingerprint for a paragraph, merging style attributes and run-level overrides.
     For multi-run paragraphs, uses the first run with an explicit value.
-    Returns dict with: size, bold, italic, align, font, color, space_before, space_after, line_spacing.
+    Returns dict with: size, bold, italic, align, font, color, space_before, space_after, first_line_indent, line_spacing.
     """
     style = paragraph.style
     style_font = style.font if hasattr(style, 'font') else None
@@ -126,6 +126,12 @@ def compute_effective_fingerprint(paragraph):
         sa_val = style_pf.space_after
     eff_space_after = _get_pt_str(sa_val)
 
+    # First line indent
+    fli_val = paragraph.paragraph_format.first_line_indent
+    if fli_val is None and style_pf:
+        fli_val = style_pf.first_line_indent
+    eff_first_line_indent = _get_pt_str(fli_val)
+
     # Line spacing: only support multiplier (float), not absolute Pt
     ls_val = paragraph.paragraph_format.line_spacing
     if ls_val is None and style_pf:
@@ -148,6 +154,7 @@ def compute_effective_fingerprint(paragraph):
         "color": eff_color,
         "space_before": eff_space_before,
         "space_after": eff_space_after,
+        "first_line_indent": eff_first_line_indent,
         "line_spacing": eff_line_spacing,
     }
 
@@ -185,6 +192,50 @@ def extract_fingerprints(filepath, min_cluster_size=4):
             "example": representative_text,
         })
     return result
+
+
+def _get_outline_level(paragraph) -> int | None:
+    """
+    Read paragraph outline level (0=Heading 1, ..., 8=Heading 9).
+    Strategy:
+      1. Check paragraph-level XML directly.
+      2. Walk style inheritance chain (para.style -> base_style -> ...),
+         up to 10 hops to guard against circular references.
+    Returns int 0-8 or None (not a heading).
+    """
+    def _read_outline_lvl_from_pPr(pPr_elem):
+        if pPr_elem is None:
+            return None
+        ol = pPr_elem.find(qn('w:outlineLvl'))
+        if ol is None:
+            return None
+        val = ol.get(qn('w:val'))
+        if val is None:
+            return None
+        try:
+            level = int(val)
+            return level if 0 <= level <= 8 else None
+        except ValueError:
+            return None
+
+    # 1. Paragraph-level direct attribute
+    para_pPr = paragraph._element.find(qn('w:pPr'))
+    level = _read_outline_lvl_from_pPr(para_pPr)
+    if level is not None:
+        return level
+
+    # 2. Style inheritance chain
+    style = paragraph.style
+    for _ in range(10):
+        if style is None:
+            break
+        style_pPr = style.element.find(qn('w:pPr'))
+        level = _read_outline_lvl_from_pPr(style_pPr)
+        if level is not None:
+            return level
+        style = style.base_style
+
+    return None
 
 
 def _detect_list_type(paragraph, doc) -> str | None:
