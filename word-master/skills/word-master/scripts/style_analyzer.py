@@ -160,15 +160,62 @@ def compute_effective_fingerprint(paragraph):
     }
 
 
-def extract_fingerprints(filepath, min_cluster_size=4):
+def extract_fingerprints(filepath, min_cluster_size=4, heading_aware=False):
     """
     Analyze a DOCX document, extract body format fingerprint clusters.
     Filter out clusters with < min_cluster_size members (cover page, etc).
     Each cluster retains one representative sample text.
-    Returns list of {id, fingerprint, example}.
+    Returns list of {id, fingerprint, example} or {heading_role, fingerprint, example}.
+
+    When heading_aware=True, heading paragraphs are grouped by outline level
+    (navigation structure) rather than style name, and their fingerprints are
+    averaged across all paragraphs at that level. Body paragraphs still go
+    through normal format clustering.
     """
     doc = docx.Document(filepath)
 
+    if heading_aware:
+        heading_paras = {}    # "Heading N" -> list of fingerprint dicts
+        heading_examples = {} # "Heading N" -> first paragraph text
+        body_clusters = {}    # fingerprint_key -> list of (text, fp)
+
+        for para in doc.paragraphs:
+            text = para.text.strip()
+            if not text:
+                continue
+            outline_level = _get_outline_level(para)
+            if outline_level is not None:
+                role = f"Heading {outline_level + 1}"
+                fp = compute_effective_fingerprint(para)
+                if role not in heading_paras:
+                    heading_paras[role] = []
+                    heading_examples[role] = text
+                heading_paras[role].append(fp)
+            else:
+                fp = compute_effective_fingerprint(para)
+                key = _fingerprint_key(fp)
+                if key not in body_clusters:
+                    body_clusters[key] = []
+                body_clusters[key].append((text, fp))
+
+        result = []
+        for role in sorted(heading_paras, key=lambda r: int(r.split()[-1])):
+            result.append({
+                "heading_role": role,
+                "fingerprint": _average_fingerprints(heading_paras[role]),
+                "example": heading_examples[role],
+            })
+        body_id = 0
+        for key, members in body_clusters.items():
+            has_chapter_pattern = any(CHAPTER_PATTERN.match(t) for t, _ in members)
+            if len(members) < min_cluster_size and not has_chapter_pattern:
+                continue
+            representative_text, representative_fp = members[0]
+            result.append({"id": body_id, "fingerprint": representative_fp, "example": representative_text})
+            body_id += 1
+        return result
+
+    # --- Original mode (heading_aware=False) ---
     clusters = {}  # key -> list of (paragraph_text, fingerprint)
     for para in doc.paragraphs:
         text = para.text.strip()
@@ -384,8 +431,20 @@ if __name__ == "__main__":
     parser.add_argument("filepath", help="Source template DOCX path")
     parser.add_argument("--min-cluster-size", type=int, default=4)
     parser.add_argument("--output", default="fingerprints.json")
+    parser.add_argument(
+        "--heading-aware",
+        action="store_true",
+        help=(
+            "Group heading paragraphs by outline level (navigation level) instead of style name. "
+            "Use when the template has mismatched heading styles but correct navigation structure."
+        ),
+    )
     args = parser.parse_args()
-    fingerprints = extract_fingerprints(args.filepath, args.min_cluster_size)
+    fingerprints = extract_fingerprints(
+        args.filepath,
+        args.min_cluster_size,
+        heading_aware=args.heading_aware,
+    )
     with open(args.output, "w", encoding="utf-8") as f:
         json.dump(fingerprints, f, ensure_ascii=False, indent=2)
-    print(f"[INFO] Extracted {len(fingerprints)} fingerprint groups → {args.output}")
+    print(f"[INFO] Extracted {len(fingerprints)} fingerprint groups -> {args.output}")
