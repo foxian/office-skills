@@ -238,6 +238,65 @@ def _get_outline_level(paragraph) -> int | None:
     return None
 
 
+def _average_fingerprints(fps: list[dict]) -> dict:
+    """
+    Aggregate a list of fingerprint dicts into one representative fingerprint.
+    Aggregation rules per field: see Spec §3.
+    """
+    if not fps:
+        return {}
+
+    def _pt_to_float(s):
+        if s is None:
+            return 0.0
+        try:
+            return float(s.rstrip("pt"))
+        except (ValueError, AttributeError):
+            return 0.0
+
+    def _vote(values, tiebreak_order=None, skip_none=False):
+        from collections import Counter
+        filtered = [v for v in values if v is not None] if skip_none else values
+        if not filtered:
+            return None
+        counts = Counter(filtered)
+        max_count = max(counts.values())
+        winners = [k for k, v in counts.items() if v == max_count]
+        if len(winners) == 1:
+            return winners[0]
+        if tiebreak_order is not None:
+            for priority in tiebreak_order:
+                if priority in winners:
+                    return priority
+        # Fallback: first occurrence in fps
+        for v in values:
+            if v in winners:
+                return v
+        return winners[0]
+
+    bold_tiebreak = [False, None, True]
+
+    size_vals = [_pt_to_float(fp.get("size")) for fp in fps if fp.get("size") is not None]
+    ls_vals = [fp.get("line_spacing") for fp in fps if fp.get("line_spacing") is not None]
+
+    def _avg_pt(field):
+        vals = [_pt_to_float(fp.get(field)) for fp in fps]
+        return f"{sum(vals) / len(vals):.1f}pt"
+
+    return {
+        "size": f"{sum(size_vals) / len(size_vals):.1f}pt" if size_vals else None,
+        "bold": _vote([fp.get("bold") for fp in fps], tiebreak_order=bold_tiebreak),
+        "italic": _vote([fp.get("italic") for fp in fps], tiebreak_order=bold_tiebreak),
+        "align": _vote([fp.get("align") for fp in fps]),
+        "font": _vote([fp.get("font") for fp in fps], skip_none=True),
+        "color": _vote([fp.get("color") for fp in fps]),
+        "space_before": _avg_pt("space_before"),
+        "space_after": _avg_pt("space_after"),
+        "first_line_indent": _avg_pt("first_line_indent"),
+        "line_spacing": sum(ls_vals) / len(ls_vals) if ls_vals else None,
+    }
+
+
 def _detect_list_type(paragraph, doc) -> str | None:
     """
     Detect if a paragraph is a Word native list.
