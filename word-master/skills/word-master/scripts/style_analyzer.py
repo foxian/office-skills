@@ -434,10 +434,18 @@ if __name__ == "__main__":
     parser.add_argument(
         "--heading-aware",
         action="store_true",
+        default=True,
         help=(
             "Group heading paragraphs by outline level (navigation level) instead of style name. "
-            "Use when the template has mismatched heading styles but correct navigation structure."
+            "Use when the template has mismatched heading styles but correct navigation structure. "
+            "Enabled by default. Use --no-heading-aware to disable."
         ),
+    )
+    parser.add_argument(
+        "--no-heading-aware",
+        action="store_false",
+        dest="heading_aware",
+        help="Disable heading-aware mode (use format clustering instead).",
     )
     args = parser.parse_args()
     fingerprints = extract_fingerprints(

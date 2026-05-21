@@ -418,12 +418,14 @@ def extract_fingerprints(filepath, min_cluster_size=4, heading_aware=False):
                 "fingerprint": _average_fingerprints(heading_paras[role]),
                 "example": heading_examples[role],
             })
-        for i, (key, members) in enumerate(body_clusters.items()):
+        body_id = 0
+        for key, members in body_clusters.items():
             has_chapter_pattern = any(CHAPTER_PATTERN.match(t) for t, _ in members)
             if len(members) < min_cluster_size and not has_chapter_pattern:
                 continue
             representative_text, representative_fp = members[0]
-            result.append({"id": i, "fingerprint": representative_fp, "example": representative_text})
+            result.append({"id": body_id, "fingerprint": representative_fp, "example": representative_text})
+            body_id += 1
         return result
 
     # --- Original mode (heading_aware=False) ---
