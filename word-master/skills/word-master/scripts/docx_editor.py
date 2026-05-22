@@ -491,7 +491,14 @@ def _apply_update_style_definition(doc, params):
         if rfonts is None:
             rfonts = rpr.makeelement(qn('w:rFonts'), {})
             rpr.insert(0, rfonts)
+        # Clear theme font attributes to avoid precedence issues
+        for attr in list(rfonts.attrib):
+            localname = attr.split('}')[-1] if '}' in attr else attr
+            if localname in ('eastAsiaTheme', 'asciiTheme', 'hAnsiTheme', 'cstheme', 'majorHAnsi', 'majorEastAsia', 'majorBidi', 'minorBidi'):
+                del rfonts.attrib[attr]
         rfonts.set(qn('w:eastAsia'), font_name)
+        rfonts.set(qn('w:ascii'), font_name)
+        rfonts.set(qn('w:hAnsi'), font_name)
 
     # Color
     # python-docx's ColorFormat clears the entire w:color element when setting
@@ -539,8 +546,8 @@ def _apply_update_style_definition(doc, params):
                     qn('w:themeColor'): theme_val.xml_value,
                 })
                 rpr.append(color_elem)
-    elif color == '':
-        # Explicitly clear color
+    elif color is None or color == '':
+        # Clear color when fingerprint has no color (use theme default)
         from docx.oxml.ns import qn
         rpr = style._element.find(qn('w:rPr'))
         if rpr is not None:
@@ -578,6 +585,261 @@ def _apply_update_style_definition(doc, params):
     ls = fp.get('line_spacing')
     if ls is not None:
         style.paragraph_format.line_spacing = ls
+
+    # First line indent
+    fli = fp.get('first_line_indent')
+    if fli:
+        try:
+            style.paragraph_format.first_line_indent = Pt(float(fli.rstrip('pt')))
+        except (ValueError, AttributeError):
+            pass
+
+    # Visibility: make sure heading styles are visible in the style gallery
+    # (some source documents have Heading 2/3 set to hidden=True)
+    if style_name.startswith('Heading '):
+        style.hidden = False
+
+
+def _insert_tbl_pr_element(tblPr, tag_name):
+    """
+    Safely get or insert a child element into w:tblPr maintaining strict OOXML order.
+    """
+    from docx.oxml import OxmlElement
+    from docx.oxml.ns import qn
+    
+    # 查找已有节点
+    existing = tblPr.find(qn(f'w:{tag_name}'))
+    if existing is not None:
+        # 清空已有节点的子节点，保留节点本身
+        for child in list(existing):
+            existing.remove(child)
+        return existing
+        
+    # 定义 w:tblPr 子元素严格 OOXML 顺序
+    TBL_PR_ORDER = [
+        'tblStyle', 'tblpPr', 'tblOverlap', 'bidiVisual', 'tblStyleRowBandSize',
+        'tblStyleColBandSize', 'tblW', 'jc', 'tblCellSpacing', 'tblInd',
+        'tblBorders', 'shd', 'tblLayout', 'tblCellMar', 'tblLook', 'activeRecord'
+    ]
+    
+    if tag_name not in TBL_PR_ORDER:
+        # 保守回退：直接 append
+        new_elem = OxmlElement(f'w:{tag_name}')
+        tblPr.append(new_elem)
+        return new_elem
+        
+    target_idx = TBL_PR_ORDER.index(tag_name)
+    
+    # 找到应该插入的位置
+    insert_before_elem = None
+    for child in tblPr:
+        # 获取子节点的 tag（不含 namespace）
+        child_tag = child.tag.split('}')[-1] if '}' in child.tag else child.tag
+        if child_tag in TBL_PR_ORDER:
+            child_idx = TBL_PR_ORDER.index(child_tag)
+            if child_idx > target_idx:
+                insert_before_elem = child
+                break
+                
+    new_elem = OxmlElement(f'w:{tag_name}')
+    if insert_before_elem is not None:
+        insert_before_elem.addprevious(new_elem)
+    else:
+        tblPr.append(new_elem)
+        
+    return new_elem
+
+
+def _insert_tc_pr_element(tcPr, tag_name):
+    """
+    Safely get or insert a child element into w:tcPr maintaining strict OOXML order.
+    """
+    from docx.oxml import OxmlElement
+    from docx.oxml.ns import qn
+    
+    # 查找已有节点
+    existing = tcPr.find(qn(f'w:{tag_name}'))
+    if existing is not None:
+        # 清空已有节点的属性和子节点，保留节点本身
+        existing.attrib.clear()
+        for child in list(existing):
+            existing.remove(child)
+        return existing
+        
+    # 定义 w:tcPr 子元素严格 OOXML 顺序
+    TC_PR_ORDER = [
+        'cnfStyle', 'tcW', 'gridSpan', 'hMerge', 'vMerge', 'tcBorders', 'shd',
+        'noWrap', 'tcMar', 'textDirection', 'fitText', 'vAlign', 'wmlFlow', 'tcFitText'
+    ]
+    
+    if tag_name not in TC_PR_ORDER:
+        new_elem = OxmlElement(f'w:{tag_name}')
+        tcPr.append(new_elem)
+        return new_elem
+        
+    target_idx = TC_PR_ORDER.index(tag_name)
+    
+    insert_before_elem = None
+    for child in tcPr:
+        child_tag = child.tag.split('}')[-1] if '}' in child.tag else child.tag
+        if child_tag in TC_PR_ORDER:
+            child_idx = TC_PR_ORDER.index(child_tag)
+            if child_idx > target_idx:
+                insert_before_elem = child
+                break
+                
+    new_elem = OxmlElement(f'w:{tag_name}')
+    if insert_before_elem is not None:
+        insert_before_elem.addprevious(new_elem)
+    else:
+        tcPr.append(new_elem)
+        
+    return new_elem
+
+
+def _apply_table_style(doc, params):
+    """
+    Apply table style parameters (borders, shading, margins, cell texts) to a table.
+    """
+    from docx.enum.style import WD_STYLE_TYPE
+    from docx.oxml import OxmlElement
+    from docx.oxml.ns import qn
+    from docx.shared import Pt
+
+    target = params.get("target")
+    table_role = params.get("table_role", {})
+    if not target or not table_role:
+        print("[WARNING] op=apply_table_style: missing target or table_role, skipping.")
+        return
+
+    try:
+        t_idx = int(target.replace("t", ""))
+        if t_idx < 0 or t_idx >= len(doc.tables):
+            print(f"[WARNING] op=apply_table_style: table index {t_idx} out of bounds, skipping.")
+            return
+    except (ValueError, AttributeError):
+        print("[WARNING] op=apply_table_style: invalid target format, skipping.")
+        return
+
+    table = doc.tables[t_idx]
+
+    # 1. 应用 tbl_style (Word 内置样式名)
+    tbl_style_name = table_role.get("tbl_style")
+    if tbl_style_name:
+        if tbl_style_name in doc.styles:
+            style = doc.styles[tbl_style_name]
+            if style.type == WD_STYLE_TYPE.TABLE:
+                table.style = style
+            else:
+                print(f"[WARNING] op=apply_table_style: style '{tbl_style_name}' is not a TABLE style, skipping style mapping.")
+        else:
+            print(f"[WARNING] op=apply_table_style: style '{tbl_style_name}' not found, skipping style mapping.")
+
+    # 2. 写入六方向边框 (tblBorders)
+    tblPr = table._tbl.tblPr
+    if tblPr is None:
+        tblPr = OxmlElement('w:tblPr')
+        table._tbl.insert(0, tblPr)
+    border_info = table_role.get("border")
+    if border_info:
+        tblBorders = _insert_tbl_pr_element(tblPr, "tblBorders")
+
+        for side in ("top", "left", "bottom", "right", "insideH", "insideV"):
+            b_data = border_info.get(side)
+            if b_data and isinstance(b_data, dict):
+                val = b_data.get("val")
+                sz = b_data.get("sz")
+                color = b_data.get("color")
+                if val:
+                    elem = OxmlElement(f"w:{side}")
+                    elem.set(qn("w:val"), val)
+                    if sz is not None:
+                        elem.set(qn("w:sz"), str(sz))
+                    if color:
+                        elem.set(qn("w:color"), color)
+                    tblBorders.append(elem)
+
+    # 3. 写入单元格内边距 (tblCellMar)
+    cell_margin = table_role.get("cell_margin")
+    if cell_margin:
+        tblCellMar = _insert_tbl_pr_element(tblPr, "tblCellMar")
+
+        for side in ("top", "bottom", "left", "right"):
+            val_pt_str = cell_margin.get(side)
+            if val_pt_str:
+                try:
+                    val_pt = float(val_pt_str.rstrip("pt"))
+                    val_dxa = int(round(val_pt * 20.0))
+                    elem = OxmlElement(f"w:{side}")
+                    elem.set(qn("w:w"), str(val_dxa))
+                    elem.set(qn("w:type"), "dxa")
+                    tblCellMar.append(elem)
+                except ValueError:
+                    pass
+
+    # 4. 逐行应用底纹和文字格式 (包含合并单元格排重逻辑)
+    has_header = table_role.get("structure", {}).get("has_header_row", False)
+    header_shading = table_role.get("shading", {}).get("header")
+    body_shading = table_role.get("shading", {}).get("body")
+    header_text_format = table_role.get("header_text")
+    body_text_format = table_role.get("body_text")
+
+    processed_cells = set()
+
+    for r_idx, row in enumerate(table.rows):
+        is_header_row = (r_idx == 0 and has_header)
+        shading_color = header_shading if is_header_row else body_shading
+        text_format = header_text_format if is_header_row else body_text_format
+
+        for cell in row.cells:
+            # 合并单元格排重：使用底层 _tc 元素识别
+            cell_key = cell._tc
+            if cell_key in processed_cells:
+                continue
+            processed_cells.add(cell_key)
+
+            # 4.1 底纹应用
+            tcPr = cell._tc.get_or_add_tcPr()
+            # 原地获取或创建 w:shd 节点写入，防止 XML 损坏并保证子节点严格顺序
+            shd = _insert_tc_pr_element(tcPr, "shd")
+            
+            if shading_color:
+                shd.set(qn("w:val"), "clear")
+                shd.set(qn("w:fill"), shading_color)
+            else:
+                shd.set(qn("w:val"), "clear")
+                shd.set(qn("w:fill"), "auto")
+
+            # 4.2 文字格式应用
+            if text_format:
+                # 转换格式参数为 _apply_set_font 和 _apply_set_paragraph_format 所需结构
+                font_params = {}
+                para_params = {}
+
+                if text_format.get("font"):
+                    font_params["name"] = text_format["font"]
+                    font_params["east_asia"] = text_format["font"]
+                if text_format.get("size"):
+                    font_params["size"] = text_format["size"]
+                if text_format.get("bold") is not None:
+                    font_params["bold"] = text_format["bold"]
+
+                if text_format.get("align"):
+                    para_params["alignment"] = text_format["align"]
+
+                for paragraph in cell.paragraphs:
+                    # 如果段落没有 runs，添加一个空 run 以便应用字体格式
+                    if not paragraph.runs and paragraph.text:
+                        paragraph.add_run(paragraph.text)
+                    elif not paragraph.runs:
+                        paragraph.add_run()
+
+                    # 应用段落级别格式
+                    if para_params:
+                        _apply_set_paragraph_format(paragraph, para_params)
+                    # 应用 run 级别字体格式
+                    if font_params:
+                        _apply_set_font(paragraph, font_params)
 
 
 def _backup_file(filepath):
@@ -638,6 +900,8 @@ def apply_operations(filepath, ops, outpath=None):
             _apply_insert_page_break(doc, op)
         elif op['op'] == 'apply_style':
             _apply_apply_style(doc, op)
+        elif op['op'] == 'apply_table_style':
+            _apply_table_style(doc, op)
         elif op['op'] == 'set_page_setup':
             _apply_set_page_setup(doc, op)
         elif op['op'] == 'update_style_definition':
