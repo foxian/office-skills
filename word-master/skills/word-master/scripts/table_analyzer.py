@@ -20,6 +20,52 @@ def get_table_cols(table):
         return 0
     return max(len(row.cells) for row in table.rows)
 
+def _resolve_style_attribute(style, extractor, depth_limit=10):
+    """
+    沿样式继承链回溯属性，避免 DRY 违背。
+    extractor 是一个回调函数，接收 style 并返回 (found, value) 元组。
+    """
+    curr_style = style
+    for _ in range(depth_limit):
+        if curr_style is None:
+            break
+        found, val = extractor(curr_style)
+        if found:
+            return val
+        curr_style = curr_style.base_style if hasattr(curr_style, 'base_style') else None
+    return None
+
+def _extract_bold(s):
+    style_font = s.font if hasattr(s, 'font') else None
+    if style_font and style_font.bold is not None:
+        return True, style_font.bold
+    return False, None
+
+def _extract_font(s):
+    style_font = s.font if hasattr(s, 'font') else None
+    if style_font:
+        style_ea = None
+        if hasattr(style_font, 'element') and style_font.element is not None:
+            r_fonts = style_font.element.find('.//{http://schemas.openxmlformats.org/wordprocessingml/2006/main}rFonts')
+            if r_fonts is not None:
+                style_ea = r_fonts.get('{http://schemas.openxmlformats.org/wordprocessingml/2006/main}eastAsia')
+        p_font = style_ea or style_font.name
+        if p_font:
+            return True, p_font
+    return False, None
+
+def _extract_size(s):
+    style_font = s.font if hasattr(s, 'font') else None
+    if style_font and style_font.size is not None:
+        return True, f"{style_font.size.pt}pt"
+    return False, None
+
+def _extract_alignment(s):
+    style_pf = s.paragraph_format if hasattr(s, 'paragraph_format') else None
+    if style_pf and style_pf.alignment is not None:
+        return True, style_pf.alignment
+    return False, None
+
 def get_effective_shading(cell):
     """
     判定有效底纹。获取单元格底纹配置，去除 w:val="clear" 时填充为常见默认白色/透明等（如 auto, FFFFFF）的底纹。
@@ -94,16 +140,9 @@ def detect_has_header_row(table):
                         return False
                 else:
                     # 没有 runs，但段落文本不为空，退化为样式继承校验
-                    style_bold = False
-                    style = p.style
-                    for _ in range(10):
-                        if style is None:
-                            break
-                        style_font = style.font if hasattr(style, 'font') else None
-                        if style_font and style_font.bold is not None:
-                            style_bold = style_font.bold
-                            break
-                        style = style.base_style if hasattr(style, 'base_style') else None
+                    style_bold = _resolve_style_attribute(p.style, _extract_bold)
+                    if style_bold is None:
+                        style_bold = False
                     if not style_bold:
                         return False
         return has_any_text
@@ -147,21 +186,7 @@ def get_text_format(paragraphs):
                 if p_font:
                     break
         if not p_font:
-            style = p.style
-            for _ in range(10):
-                if style is None:
-                    break
-                style_font = style.font if hasattr(style, 'font') else None
-                if style_font:
-                    style_ea = None
-                    if hasattr(style_font, 'element') and style_font.element is not None:
-                        r_fonts = style_font.element.find('.//{http://schemas.openxmlformats.org/wordprocessingml/2006/main}rFonts')
-                        if r_fonts is not None:
-                            style_ea = r_fonts.get('{http://schemas.openxmlformats.org/wordprocessingml/2006/main}eastAsia')
-                    p_font = style_ea or style_font.name
-                    if p_font:
-                        break
-                style = style.base_style if hasattr(style, 'base_style') else None
+            p_font = _resolve_style_attribute(p.style, _extract_font)
                 
         # 2. 字号判定
         p_size = None
@@ -170,15 +195,7 @@ def get_text_format(paragraphs):
                 p_size = f"{r.font.size.pt}pt"
                 break
         if not p_size:
-            style = p.style
-            for _ in range(10):
-                if style is None:
-                    break
-                style_font = style.font if hasattr(style, 'font') else None
-                if style_font and style_font.size is not None:
-                    p_size = f"{style_font.size.pt}pt"
-                    break
-                style = style.base_style if hasattr(style, 'base_style') else None
+            p_size = _resolve_style_attribute(p.style, _extract_size)
                 
         # 3. 加粗判定
         p_bold = None
@@ -188,15 +205,7 @@ def get_text_format(paragraphs):
                     p_bold = r.bold
                     break
         if p_bold is None:
-            style = p.style
-            for _ in range(10):
-                if style is None:
-                    break
-                style_font = style.font if hasattr(style, 'font') else None
-                if style_font and style_font.bold is not None:
-                    p_bold = style_font.bold
-                    break
-                style = style.base_style if hasattr(style, 'base_style') else None
+            p_bold = _resolve_style_attribute(p.style, _extract_bold)
             if p_bold is None:
                 p_bold = False
                 
@@ -209,15 +218,7 @@ def get_text_format(paragraphs):
         }
         p_align_raw = p.paragraph_format.alignment if hasattr(p, 'paragraph_format') and p.paragraph_format else None
         if p_align_raw is None:
-            style = p.style
-            for _ in range(10):
-                if style is None:
-                    break
-                style_pf = style.paragraph_format if hasattr(style, 'paragraph_format') else None
-                if style_pf and style_pf.alignment is not None:
-                    p_align_raw = style_pf.alignment
-                    break
-                style = style.base_style if hasattr(style, 'base_style') else None
+            p_align_raw = _resolve_style_attribute(p.style, _extract_alignment)
         p_align = align_map.get(p_align_raw) if p_align_raw is not None else None
         
         if p_font: fonts.append(p_font)
@@ -294,9 +295,17 @@ def extract_table_fingerprints(filepath):
                         val = b_elem.get(qn('w:val'))
                         sz = b_elem.get(qn('w:sz'))
                         color = b_elem.get(qn('w:color'))
+                        
+                        sz_val = None
+                        if sz is not None:
+                            try:
+                                sz_val = int(sz)
+                            except ValueError:
+                                pass
+                                
                         border_info[border_name] = {
                             "val": val,
-                            "sz": int(sz) if sz is not None else None,
+                            "sz": sz_val,
                             "color": color
                         }
                         
