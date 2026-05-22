@@ -1,6 +1,5 @@
 import docx
 import json
-import re
 import sys
 import os
 
@@ -9,16 +8,9 @@ sys.path.insert(0, os.path.dirname(__file__))
 from style_analyzer import _detect_list_type
 from validate_style_profile import validate_profile
 
-# Text patterns for semantic role inference (fallback when fingerprint is uninformative)
-_HEADING1_PATTERN = re.compile(
-    r'^(第[一二三四五六七八九十\d]+篇|第[一二三四五六七八九十\d]+章)\s'
-)
-_HEADING2_PATTERN = re.compile(
-    r'^(\d+\.\d*\s|[一二三四五六七八九十]+、\s)'
-)
-_HEADING3_PATTERN = re.compile(
-    r'^(\d+\.\d+\.\d*\s|（[一二三四五六七八九十\d]+）\s|[一二三四五六七八九十]+、\d)'
-)
+_FALLBACK_MAP = {
+    "Body Text": "Normal",
+}
 
 
 def _score(fp, role_fp):
@@ -116,25 +108,6 @@ def _score(fp, role_fp):
     return (score / weight_sum) * confidence
 
 
-def _infer_role_from_text(text, profile):
-    """
-    Infer paragraph role from text patterns when fingerprint matching is inconclusive.
-    Returns a Word style name from the profile, or None.
-    """
-    available_roles = {entry["role"] for entry in profile.get("roles", [])}
-
-    if _HEADING1_PATTERN.match(text):
-        if "Heading 1" in available_roles:
-            return "Heading 1"
-    if _HEADING3_PATTERN.match(text):
-        if "Heading 3" in available_roles:
-            return "Heading 3"
-    if _HEADING2_PATTERN.match(text):
-        if "Heading 2" in available_roles:
-            return "Heading 2"
-    return None
-
-
 def match_fingerprint_to_role(fp, profile, threshold=0.6):
     """
     Match a paragraph fingerprint to the nearest role in style_profile.
@@ -180,10 +153,6 @@ def generate_apply_ops(draft_path, profile, skip_head=0, skip_tail=0):
     for i, para in enumerate(paras):
         if i < skip_head or i >= n - skip_tail:
             continue
-        text = para.text.strip()
-        if not text:
-            continue
-
         style_name = para.style.name
         role = None
 
@@ -197,14 +166,14 @@ def generate_apply_ops(draft_path, profile, skip_head=0, skip_tail=0):
             if list_type is not None:
                 role = list_type if list_type in available_roles else "Normal"
 
-        # Level 2: Body-style paragraphs — try text pattern, then default to Normal
-        # Non-body styles (Subtitle, Title, etc.) skip text patterns to prevent
-        # misidentification as headings
+        # Level 2: 精确匹配（仅当 role 未被设置时）
         if role is None:
-            if style_name in ("Normal", "Body Text", "Default Paragraph Style"):
-                role = _infer_role_from_text(text, profile)
-                if role is None and "Normal" in available_roles:
-                    role = "Normal"
+            if style_name in available_roles:
+                role = style_name
+            elif style_name in _FALLBACK_MAP:
+                fallback = _FALLBACK_MAP[style_name]
+                if fallback in available_roles:
+                    role = fallback
 
         # Level 3: Absolute Fallback
         if role is None:
@@ -217,6 +186,57 @@ def generate_apply_ops(draft_path, profile, skip_head=0, skip_tail=0):
                 "style": role,
                 "clear_run_formats": True,
             })
+
+    # --- Phase 3: generate apply_table_style ops per table ---
+    table_roles = profile.get("table_roles", [])
+    if not table_roles:
+        print("[INFO] table_roles 为空或不存在，跳过表格样式迁移。")
+    else:
+        from table_analyzer import get_table_cols, detect_has_header_row
+        for i, table in enumerate(doc.tables):
+            cols = get_table_cols(table)
+            rows = len(table.rows)
+            has_header = detect_has_header_row(table)
+
+            best_role = None
+            best_score = -1.0
+
+            for entry in table_roles:
+                struct = entry.get("structure", {})
+                e_cols = struct.get("cols")
+                e_rows = struct.get("rows")
+                e_has_header = struct.get("has_header_row")
+
+                score = 0.0
+                
+                # 1. cols 相同 → +0.5
+                if cols == e_cols:
+                    score += 0.5
+                
+                # 2. has_header_row 一致 → +0.3
+                if has_header == e_has_header:
+                    score += 0.3
+                
+                # 3. 行数差值 ≤ 2 → +0.2
+                if e_rows is not None:
+                    try:
+                        diff = abs(rows - e_rows)
+                        if diff <= 2:
+                            score += 0.2
+                    except (ValueError, TypeError):
+                        pass
+
+                if score > best_score:
+                    best_score = score
+                    best_role = entry
+
+            if best_role is not None:
+                ops.append({
+                    "op": "apply_table_style",
+                    "target": f"t{i}",
+                    "table_role": best_role
+                })
+
     return ops
 
 
