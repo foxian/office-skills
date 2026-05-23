@@ -220,7 +220,7 @@ DETECTORS.append(MyNewPageDetector())
 |------|------|------|
 | `type` | string | 页面类型标识 |
 | `confidence` | float | 识别置信度 0~1 |
-| `detected_by` | list[string] | `"position"` / `"keyword"` 的组合 |
+| `detected_by` | list[string] | `"position"` / `"keyword"` 的组合；当无关键词时（如 `back_cover`），仅含 `["position"]` |
 | `skip_style_transfer` | bool | 默认 `true`；改为 `false` 可启用精确迁移（未来功能） |
 | `para_count` | int | 该页面包含的段落数，便于人工核查 |
 | `para_range` | list[int, int] | 段落范围，**闭区间** `[first_para_index, last_para_index]`（两端均包含） |
@@ -342,7 +342,7 @@ python style_transfer.py --profile style_profile.json draft.docx output.docx --n
 1. **单元测试**：`CoverPageDetector.score(paras, page_index=0, total_pages=10)` 含"报告"关键词时返回 ≥ 0.7
 2. **单元测试**：`CoverPageDetector.score(paras, page_index=9, total_pages=10)` 含"报告"关键词时返回 < 0.5（位置惩罚）
 3. **单元测试**：`BackCoverDetector.score(paras=[], page_index=9, total_pages=10)` 返回 ≥ 0.5（仅位置，无关键词时权重重分配为 1.0）
-4. **单元测试**：分页切割函数正确在 `<w:br type="page"/>` 处切断，切割后页组数 = 分页符数 + 1
+4. **单元测试**：分页切割函数正确在 `<w:br w:type="page"/>` 处切断，切割后页组数 = 分页符数 + 1
 5. **单元测试**：文档无分页符、共 30 段时，回退切割产生 2 个虚拟页组（各 15 段），`total_pages=2`，**所有检测器共用此结果**
 6. **单元测试**：新增一个最小化子类（只写 `page_type`/`search_zone`/`keywords`），`PageClassifier` 能自动调度且 `keyword_patterns` 默认为空列表
 7. **单元测试**：CLI `--min-score 0.3` 传入时，所有检测器的实例 `min_score=0.5` 被忽略，统一使用 0.3
