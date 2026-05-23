@@ -108,16 +108,14 @@ class PageDetector:
 
 ### 分页切割策略
 
-`PageClassifier.classify()` 在打分前先将文档段落列表切割为「页组」列表，每个页组对应一个物理页面。
+`PageClassifier.classify()` 在打分前先将文档段落列表切割为「页组」列表。**所有检测器共用同一份切割结果**，`page_index`／`total_pages` 在全局语义一致。
 
 **切割规则（按优先级）**：
 
-1. **显式分页符**：段落中任意 run 含 `<w:br w:type="page"/>` 节点，或段落 pPr 含 `<w:pageBreakBefore/>`，则在该段落**之后**切断，形成新页组。
-2. **分节符**：段落 pPr 含 `<w:sectPr>`（非文档末尾的 sectPr），同样视为页面边界，在该段落之后切断。
-3. **回退策略**（文档无任何分页符时）：
-   - `search_zone == "head"` 的检测器：取文档前 20 段作为候选页组
-   - `search_zone == "tail"` 的检测器：取文档后 20 段作为候选页组
-   - `search_zone == "any"` 的检测器：以每 15 段为一个滑动窗口遍历全文
+1. **显式分页符**：段落中任意 run 含 `<w:br w:type="page"/>` 节点，则在该段落**之后**切断（该段落属于当前页组，下一段落开始新页组）。
+2. **`pageBreakBefore`**：段落 pPr 含 `<w:pageBreakBefore/>`，则在该段落**之前**切断（该段落为新页组的第一个段落）。
+3. **分节符**：段落 pPr 含 `<w:sectPr>`（非文档末尾的 sectPr），同视为页面边界，在该段落**之后**切断。
+4. **回退策略**（文档无任何分页符和分节符时）：以每 **15 段**为一个虚拟页组切割全文，产生统一的虚拟页组列表。所有检测器共用这一列表，`search_zone` 属性仅影响 `position_score` 的计算公式选择，不影响页组列表本身。
 
 切割结果为有序的 `List[List[Paragraph]]`，`page_index` 即在此列表中的下标，`total_pages` 即列表长度。
 
@@ -130,8 +128,9 @@ position_score（利用 page_index 和 total_pages 计算）:
   search_zone == "any"  → 0.5（不加分也不减分）
 
 keyword_score（字面量 + 正则两类合并计算）:
-  all_keywords = keywords + keyword_patterns
-  命中数 / len(all_keywords)，去重后按页组内所有段落文本搜索
+  all_keywords = list(dict.fromkeys(keywords + keyword_patterns))  # 先对列表去重
+  命中的不重复关键词数 / len(all_keywords)（即分母 = 去重后的关键词总数）
+  列表已去重，每个关键词只计一次，单个页组内命中则计分，未命中则不计
   字面量用 in 匹配，正则用 re.search() 匹配
   若 all_keywords 为空（如 back_cover），keyword_score = 0，final_score 仅靠 position_score
 
@@ -223,6 +222,7 @@ DETECTORS.append(MyNewPageDetector())
 | `detected_by` | list[string] | `"position"` / `"keyword"` 的组合 |
 | `skip_style_transfer` | bool | 默认 `true`；改为 `false` 可启用精确迁移（未来功能） |
 | `para_count` | int | 该页面包含的段落数，便于人工核查 |
+| `para_range` | list[int, int] | 段落范围，**闭区间** `[first_para_index, last_para_index]`（两端均包含） |
 | `paragraphs` | list | 页面内各段落格式摘要 |
 
 ### paragraphs 内 role 命名规范与推断规则
@@ -235,6 +235,15 @@ DETECTORS.append(MyNewPageDetector())
 | 12–17pt | `Cover Subtitle` | `Signature Name` | `TOC Heading` |
 | < 12pt | `Cover Date` / `Cover Org` | `Signature Date` | `TOC Entry` |
 | 无法判断 | `Cover Body` | `Signature Body` | `TOC Body` |
+
+其余 4 种页面类型（`back_cover`、`commitment_letter`、`copyright`、`appendix_cover`）统一按封面类规则命名，将 role 名前缀替换为页面类型标题：
+
+| 页面类型 | 大字 ≥ 18pt | 中字 12–17pt | 小字 < 12pt | 其他 |
+|---------|------------|------------|-----------|------|
+| `back_cover` | `BackCover Title` | `BackCover Subtitle` | `BackCover Body` | `BackCover Body` |
+| `commitment_letter` | `Commitment Title` | `Commitment Body` | `Commitment Footer` | `Commitment Body` |
+| `copyright` | `Copyright Title` | `Copyright Body` | `Copyright Footer` | `Copyright Body` |
+| `appendix_cover` | `Appendix Title` | `Appendix Subtitle` | `Appendix Body` | `Appendix Body` |
 
 同一页面内按字体大小从大到小依次分配，相同大小的段落归入同一 role（取文档中第一个出现的为代表示例）。
 
