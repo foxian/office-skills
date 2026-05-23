@@ -83,16 +83,18 @@ word-master/skills/word-master/scripts/
 
 ```python
 class PageDetector:
-    page_type: str         # 唯一类型标识，如 "cover"
-    search_zone: str       # "head" / "tail" / "any"
-    search_limit: int      # 搜索区域的段落数上限（"any" 时忽略）
-    keywords: list[str]    # 内容关键词列表
-    min_score: float = 0.5 # 置信度阈值，低于此值不认为匹配
+    page_type: str              # 唯一类型标识，如 "cover"
+    search_zone: str            # "head" / "tail" / "any"
+    keywords: list[str]         # 字面量关键词列表（in 匹配）
+    keyword_patterns: list[str] # 正则关键词列表（re.search 匹配）；默认空列表
+    min_score: float = 0.5      # 实例级置信度阈值；可被 CLI --min-score 全局覆盖
 
-    def score(self, paras: list, zone: str) -> float:
+    def score(self, paras: list, page_index: int, total_pages: int) -> float:
         """
         计算这批段落属于该页面类型的置信度（0~1）。
-        默认实现：位置分 × 0.4 + 关键词命中分 × 0.6
+        page_index: 当前页组在文档所有页组中的从 0 开始的索引
+        total_pages: 文档总页组数
+        默认实现：position_score × 0.4 + keyword_score × 0.6
         子类可 override 实现特殊逻辑。
         """
 
@@ -100,35 +102,58 @@ class PageDetector:
         """
         提取该页面内各段落的格式摘要，写入 special_pages.paragraphs。
         默认实现：对每段调用 compute_effective_fingerprint()，
-        并根据字体大小推断 role 名（Cover Title / Cover Subtitle 等）。
+        并按下方「role 名推断规则」推断 role 名。
         """
 ```
+
+### 分页切割策略
+
+`PageClassifier.classify()` 在打分前先将文档段落列表切割为「页组」列表，每个页组对应一个物理页面。
+
+**切割规则（按优先级）**：
+
+1. **显式分页符**：段落中任意 run 含 `<w:br w:type="page"/>` 节点，或段落 pPr 含 `<w:pageBreakBefore/>`，则在该段落**之后**切断，形成新页组。
+2. **分节符**：段落 pPr 含 `<w:sectPr>`（非文档末尾的 sectPr），同样视为页面边界，在该段落之后切断。
+3. **回退策略**（文档无任何分页符时）：
+   - `search_zone == "head"` 的检测器：取文档前 20 段作为候选页组
+   - `search_zone == "tail"` 的检测器：取文档后 20 段作为候选页组
+   - `search_zone == "any"` 的检测器：以每 15 段为一个滑动窗口遍历全文
+
+切割结果为有序的 `List[List[Paragraph]]`，`page_index` 即在此列表中的下标，`total_pages` 即列表长度。
 
 ### 默认打分逻辑
 
 ```
-position_score:
-  search_zone == "head" → 页组越靠前分越高（线性衰减）
-  search_zone == "tail" → 页组越靠后分越高
-  search_zone == "any"  → position_score = 0.5（不加分也不减分）
+position_score（利用 page_index 和 total_pages 计算）:
+  search_zone == "head" → 1.0 - page_index / total_pages
+  search_zone == "tail" → page_index / (total_pages - 1) if total_pages > 1 else 1.0
+  search_zone == "any"  → 0.5（不加分也不减分）
 
-keyword_score:
-  命中关键词数 / 总关键词数（去重，按页组内所有段落文本搜索）
+keyword_score（字面量 + 正则两类合并计算）:
+  all_keywords = keywords + keyword_patterns
+  命中数 / len(all_keywords)，去重后按页组内所有段落文本搜索
+  字面量用 in 匹配，正则用 re.search() 匹配
+  若 all_keywords 为空（如 back_cover），keyword_score = 0，final_score 仅靠 position_score
 
 final_score = position_score × 0.4 + keyword_score × 0.6
+（若 all_keywords 为空，权重重分配：position_score × 1.0）
 ```
+
+### `min_score` 优先级规则
+
+CLI `--min-score` / `--special-page-min-score` 参数为**全局覆盖**：当该参数存在时，忽略所有检测器实例的 `min_score` 字段，统一使用 CLI 传入值。未传入时各检测器使用自身 `min_score`（默认 0.5）。
 
 ### 注册表（7 种初始类型）
 
-| 类型 | `page_type` | `search_zone` | 核心关键词 |
-|------|-------------|---------------|-----------|
-| 封面 | `cover` | `head` | 项目、报告、方案、封面、编制 |
-| 封底 | `back_cover` | `tail` | —（位置主导，keywords 为空） |
-| 目录页 | `table_of_contents` | `head` | 目录、第.*章、……… |
-| 签名页 | `signature` | `tail` | 签字、签章、盖章、经办人 |
-| 承诺函 | `commitment_letter` | `tail` | 承诺、保证、声明、郑重 |
-| 版权声明 | `copyright` | `head` | 版权、著作权、©、保留 |
-| 附录封面 | `appendix_cover` | `any` | 附录、Appendix |
+| 类型 | `page_type` | `search_zone` | `keywords`（字面量） | `keyword_patterns`（正则） |
+|------|-------------|---------------|---------------------|---------------------------|
+| 封面 | `cover` | `head` | 项目、报告、方案、封面、编制 | — |
+| 封底 | `back_cover` | `tail` | —（位置主导） | — |
+| 目录页 | `table_of_contents` | `head` | 目录 | `第.{1,4}章`、`\.{3,}` |
+| 签名页 | `signature` | `tail` | 签字、签章、盖章、经办人 | — |
+| 承诺函 | `commitment_letter` | `tail` | 承诺、保证、声明、郑重 | — |
+| 版权声明 | `copyright` | `head` | 版权、著作权、保留 | `©` |
+| 附录封面 | `appendix_cover` | `any` | 附录、Appendix | — |
 
 ### 新增类型示例
 
@@ -137,6 +162,7 @@ class MyNewPageDetector(PageDetector):
     page_type = "my_new_type"
     search_zone = "tail"
     keywords = ["关键词A", "关键词B"]
+    keyword_patterns = []   # 无正则关键词时可省略（基类默认空列表）
     # 默认打分和格式提取逻辑自动继承，无需 override
 
 DETECTORS.append(MyNewPageDetector())
@@ -199,12 +225,20 @@ DETECTORS.append(MyNewPageDetector())
 | `para_count` | int | 该页面包含的段落数，便于人工核查 |
 | `paragraphs` | list | 页面内各段落格式摘要 |
 
-### paragraphs 内 role 命名规范
+### paragraphs 内 role 命名规范与推断规则
 
-封面类：`Cover Title`、`Cover Subtitle`、`Cover Date`、`Cover Org`  
-签名类：`Signature Name`、`Signature Title`、`Signature Date`  
-目录类：`TOC Heading`、`TOC Entry`  
-（这些 role 名不进入 `validate_style_profile.py` 白名单校验，仅供格式参考）
+`extract_format()` 默认实现按如下规则推断 role 名（以字体大小为主要依据）：
+
+| 字体大小 | 推断 role（封面类） | 推断 role（签名类） | 推断 role（目录类） |
+|---------|-------------------|-------------------|-------------------|
+| ≥ 18pt | `Cover Title` | `Signature Title` | `TOC Heading` |
+| 12–17pt | `Cover Subtitle` | `Signature Name` | `TOC Heading` |
+| < 12pt | `Cover Date` / `Cover Org` | `Signature Date` | `TOC Entry` |
+| 无法判断 | `Cover Body` | `Signature Body` | `TOC Body` |
+
+同一页面内按字体大小从大到小依次分配，相同大小的段落归入同一 role（取文档中第一个出现的为代表示例）。
+
+这些 role 名**不进入 `validate_style_profile.py` 白名单校验**，仅供格式参考。
 
 ---
 
@@ -264,7 +298,7 @@ python style_transfer.py --profile style_profile.json draft.docx output.docx --n
 | 场景 | 行为 |
 |------|------|
 | 旧 profile（无 `special_pages`）+ 新 `style_transfer.py` | 自动降级，等同旧行为 |
-| `--skip-head N` 与新逻辑并存 | 两者取并集跳过 |
+| `--skip-head N` 与新逻辑并存 | 两者取**段落索引集合的并集**后跳过（即 `skip_set = set(range(N)) | special_page_indices`） |
 | 草稿识别置信度低于阈值 | 不跳过该页面，输出 WARN 日志 |
 | `--no-special-pages` 显式关闭 | 完全等同旧行为 |
 
@@ -285,16 +319,21 @@ python style_transfer.py --profile style_profile.json draft.docx output.docx --n
 | `scripts/page_classifier.py` | **NEW** | `PageDetector` 基类 + 7种检测器 + `PageClassifier` + CLI |
 | `scripts/template_analyzer.py` | MODIFY | 集成 `PageClassifier`，输出 `special_pages` 到 profile |
 | `scripts/style_transfer.py` | MODIFY | 执行前对草稿运行 `PageClassifier`，精确跳过特殊页面段落 |
+| `scripts/validate_style_profile.py` | MODIFY | 新增对 `special_pages` 字段的基础结构校验（type/confidence/skip_style_transfer/paragraphs 的类型检查） |
 | `tests/test_page_classifier.py` | **NEW** | 各 Detector 打分逻辑 + 分页切割 + 端到端识别测试 |
+| `tests/fixtures/test_special_pages_template.docx` | **NEW** | 含封面+正文+签名页的测试固件文档，由测试 setUp 动态生成（python-docx 代码创建，不需要手工制作） |
 
 ---
 
 ## 验证标准
 
-1. **单元测试**：`CoverPageDetector.score()` 在文档头部含"报告"关键词时返回 ≥ 0.7
-2. **单元测试**：`CoverPageDetector.score()` 在文档尾部含"报告"关键词时返回 < 0.5（位置惩罚）
-3. **单元测试**：`BackCoverDetector.score()` 在尾部空白页返回 ≥ 0.5（仅位置，无关键词）
-4. **单元测试**：新增一个最小化子类（只写 `page_type`/`search_zone`/`keywords`），`PageClassifier` 能自动调度
-5. **集成测试**：含封面+正文+签名页的测试文档，`page_classifier.py` 正确识别 cover 和 signature 的段落范围
-6. **集成测试**：旧版 profile（无 `special_pages`）传入新版 `style_transfer.py`，输出与旧版完全一致
-7. **集成测试**：`template_analyzer.py` 对测试模板输出的 profile 包含结构合法的 `special_pages` 字段
+1. **单元测试**：`CoverPageDetector.score(paras, page_index=0, total_pages=10)` 含"报告"关键词时返回 ≥ 0.7
+2. **单元测试**：`CoverPageDetector.score(paras, page_index=9, total_pages=10)` 含"报告"关键词时返回 < 0.5（位置惩罚）
+3. **单元测试**：`BackCoverDetector.score(paras=[], page_index=9, total_pages=10)` 返回 ≥ 0.5（仅位置，无关键词时权重重分配为 1.0）
+4. **单元测试**：分页切割函数正确在 `<w:br type="page"/>` 处切断，切割后页组数 = 分页符数 + 1
+5. **单元测试**：文档无分页符时，head zone 回退为前 20 段，tail zone 回退为后 20 段
+6. **单元测试**：新增一个最小化子类（只写 `page_type`/`search_zone`/`keywords`），`PageClassifier` 能自动调度且 `keyword_patterns` 默认为空列表
+7. **单元测试**：CLI `--min-score 0.3` 传入时，所有检测器的实例 `min_score=0.5` 被忽略，统一使用 0.3
+8. **集成测试**：含封面+正文+签名页的测试文档（test_special_pages_template.docx），`page_classifier.py` 正确识别 cover 和 signature 的段落范围
+9. **集成测试**：旧版 profile（无 `special_pages`）传入新版 `style_transfer.py`，输出与旧版完全一致
+10. **集成测试**：`template_analyzer.py` 对测试模板输出的 profile 包含结构合法的 `special_pages` 字段，`validate_style_profile.py` 通过校验
