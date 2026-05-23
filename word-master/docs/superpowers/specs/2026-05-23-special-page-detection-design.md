@@ -127,11 +127,12 @@ position_score（利用 page_index 和 total_pages 计算）:
   search_zone == "tail" → page_index / (total_pages - 1) if total_pages > 1 else 1.0
   search_zone == "any"  → 0.5（不加分也不减分）
 
-keyword_score（字面量 + 正则两类合并计算）:
-  all_keywords = list(dict.fromkeys(keywords + keyword_patterns))  # 先对列表去重
-  命中的不重复关键词数 / len(all_keywords)（即分母 = 去重后的关键词总数）
-  列表已去重，每个关键词只计一次，单个页组内命中则计分，未命中则不计
-  字面量用 in 匹配，正则用 re.search() 匹配
+keyword_score（字面量 + 正则两类分别匹配，仅分母共用去重后的总数）:
+  分母：len(list(dict.fromkeys(keywords + keyword_patterns)))（去重后的全部关键词总数）
+  分子：分别遍历 keywords（in 匹配）和 keyword_patterns（re.search 匹配）统计命中数
+        同一关键词同时出现在两表且均命中时，去重后仅计一次
+  keyword_score = 命中的不重复关键词数 / 分母
+  匹配范围：页组内所有段落文本拼接后一起搜索
   若 all_keywords 为空（如 back_cover），keyword_score = 0，final_score 仅靠 position_score
 
 final_score = position_score × 0.4 + keyword_score × 0.6
@@ -245,6 +246,8 @@ DETECTORS.append(MyNewPageDetector())
 | `copyright` | `Copyright Title` | `Copyright Body` | `Copyright Footer` | `Copyright Body` |
 | `appendix_cover` | `Appendix Title` | `Appendix Subtitle` | `Appendix Body` | `Appendix Body` |
 
+> 封底等页面类型的小字段落（< 12pt）统一归入 Body，不做 Date/Org 细分，因为这些页面通常不需要日期/机构字段的精确迁移语义。
+
 同一页面内按字体大小从大到小依次分配，相同大小的段落归入同一 role（取文档中第一个出现的为代表示例）。
 
 这些 role 名**不进入 `validate_style_profile.py` 白名单校验**，仅供格式参考。
@@ -340,7 +343,7 @@ python style_transfer.py --profile style_profile.json draft.docx output.docx --n
 2. **单元测试**：`CoverPageDetector.score(paras, page_index=9, total_pages=10)` 含"报告"关键词时返回 < 0.5（位置惩罚）
 3. **单元测试**：`BackCoverDetector.score(paras=[], page_index=9, total_pages=10)` 返回 ≥ 0.5（仅位置，无关键词时权重重分配为 1.0）
 4. **单元测试**：分页切割函数正确在 `<w:br type="page"/>` 处切断，切割后页组数 = 分页符数 + 1
-5. **单元测试**：文档无分页符时，head zone 回退为前 20 段，tail zone 回退为后 20 段
+5. **单元测试**：文档无分页符、共 30 段时，回退切割产生 2 个虚拟页组（各 15 段），`total_pages=2`，**所有检测器共用此结果**
 6. **单元测试**：新增一个最小化子类（只写 `page_type`/`search_zone`/`keywords`），`PageClassifier` 能自动调度且 `keyword_patterns` 默认为空列表
 7. **单元测试**：CLI `--min-score 0.3` 传入时，所有检测器的实例 `min_score=0.5` 被忽略，统一使用 0.3
 8. **集成测试**：含封面+正文+签名页的测试文档（test_special_pages_template.docx），`page_classifier.py` 正确识别 cover 和 signature 的段落范围
