@@ -5,12 +5,31 @@ import os
 
 # Reuse fingerprint computation from style_analyzer
 sys.path.insert(0, os.path.dirname(__file__))
-from style_analyzer import _detect_list_type
+from style_analyzer import _detect_list_type, _is_western_font
 from validate_style_profile import validate_profile
+from style_analyzer import extract_fingerprints
 
 _FALLBACK_MAP = {
     "Body Text": "Normal",
+    "Compact": "List Paragraph",
 }
+
+_BODY_STYLES_PRIORITY = ["Normal Indent", "Normal", "Body Text", "First Paragraph"]
+
+def _is_body_style(name):
+    name_lower = name.lower()
+    return (
+        name in _BODY_STYLES_PRIORITY 
+        or "body" in name_lower 
+        or name_lower == "normal"
+    )
+
+def _find_fallback_body_style(available_roles):
+    for style in _BODY_STYLES_PRIORITY:
+        if style in available_roles:
+            return style
+    return None
+
 
 
 def _score(fp, role_fp):
@@ -144,11 +163,13 @@ def generate_apply_ops(draft_path, profile, skip_head=0, skip_tail=0):
                 "fingerprint": fp,
             })
 
+
     # --- Phase 2: generate apply_style ops per paragraph ---
     doc = docx.Document(draft_path)
     paras = doc.paragraphs
     n = len(paras)
     available_roles = {entry["role"] for entry in profile.get("roles", [])}
+    _normal_fp = next((e["fingerprint"] for e in profile.get("roles", []) if e["role"] == "Normal"), None)
 
     for i, para in enumerate(paras):
         if i < skip_head or i >= n - skip_tail:
@@ -164,7 +185,19 @@ def generate_apply_ops(draft_path, profile, skip_head=0, skip_tail=0):
         if role is None:
             list_type = _detect_list_type(para, doc)
             if list_type is not None:
-                role = list_type if list_type in available_roles else "Normal"
+                if list_type in available_roles:
+                    role = list_type
+                elif "List Paragraph" in available_roles:
+                    role = "List Paragraph"
+                else:
+                    role = "Normal"
+
+        # Level 1.5: List Paragraph passthrough
+        # If the paragraph uses a list-like style (e.g. "List Paragraph", "List Bullet")
+        # but Level 1 didn't catch it (no numPr), preserve the original style so that
+        # list indentation and formatting are not clobbered by Normal fallback.
+        if role is None and ("list" in style_name.lower()) and style_name in doc.styles:
+            role = style_name
 
         # Level 2: 精确匹配（仅当 role 未被设置时）
         if role is None:
@@ -175,17 +208,23 @@ def generate_apply_ops(draft_path, profile, skip_head=0, skip_tail=0):
                 if fallback in available_roles:
                     role = fallback
 
+        # Level 2.5: 智能正文大类退级
+        if role is None and _is_body_style(style_name):
+            role = _find_fallback_body_style(available_roles)
+
         # Level 3: Absolute Fallback
         if role is None:
             role = "Normal" if "Normal" in available_roles else None
 
         if role:
+            is_style_changing = (style_name != role)
             ops.append({
                 "op": "apply_style",
                 "target": f"p{i}",
                 "style": role,
-                "clear_run_formats": True,
+                "clear_run_formats": is_style_changing,
             })
+
 
     # --- Phase 3: generate apply_table_style ops per table ---
     table_roles = profile.get("table_roles", [])
@@ -231,10 +270,58 @@ def generate_apply_ops(draft_path, profile, skip_head=0, skip_tail=0):
                     best_role = entry
 
             if best_role is not None:
+                # 智能注入主正文的中文字体作为表格文字的默认 east_asia 字体，防止表格内中文变成宋体或系统默认
+                # 我们先在 profile 的 roles 中寻找主正文字体（即第一个非西文字体）
+                main_chinese_font = None
+                for entry in profile.get("roles", []):
+                    f = entry.get("fingerprint", {}).get("font")
+                    if f and not _is_western_font(f):
+                        main_chinese_font = f
+                        break
+                
+                # 复制一份 best_role 避免直接修改 profile 并展开标准化纠偏与智能设置
+                role_copy = json.loads(json.dumps(best_role))
+                
+                # 1. 规范表头格式：优先保留源模板表头样式，缺失则智能回退 (黑体三号, 加粗, 居中)
+                orig_header = best_role.get("header_text") or {}
+                header_font = orig_header.get("font")
+                header_chinese = (
+                    orig_header.get("east_asia")
+                    or (header_font if header_font and not _is_western_font(header_font) else None)
+                    or "黑体"
+                )
+                role_copy["header_text"] = {
+                    "font": header_font or "黑体",
+                    "east_asia": header_chinese,
+                    "size": orig_header.get("size") or "16.0pt",  # 三号字
+                    "bold": orig_header.get("bold") if orig_header.get("bold") is not None else True,
+                    "align": orig_header.get("align") or "center"
+                }
+                
+                # 2. 规范表格内容格式：优先保留源模板正文样式，缺失则智能回退 (仿宋四号, 不加粗, 自适应对齐)
+                orig_body = best_role.get("body_text") or {}
+                body_font = orig_body.get("font")
+                body_chinese = (
+                    orig_body.get("east_asia")
+                    or (body_font if body_font and not _is_western_font(body_font) else None)
+                    or main_chinese_font
+                    or "仿宋_GB2312"
+                )
+                body_size = orig_body.get("size") or "14.0pt"  # 四号字
+                body_align = orig_body.get("align") or "justify"
+                
+                role_copy["body_text"] = {
+                    "font": body_font or "Arial",   # 西文
+                    "east_asia": body_chinese,
+                    "size": body_size,
+                    "bold": orig_body.get("bold") if orig_body.get("bold") is not None else False,
+                    "align": body_align
+                }
+
                 ops.append({
                     "op": "apply_table_style",
                     "target": f"t{i}",
-                    "table_role": best_role
+                    "table_role": role_copy
                 })
 
     return ops
@@ -267,7 +354,7 @@ def run(template_path, draft_path, output_path,
         if not validate_profile(profile):
             raise ValueError(f"[ERROR] style_profile.json 格式验证失败，请检查上述错误")
     else:
-        from style_analyzer import extract_fingerprints
+        
         print(f"[INFO] Analyzing template: {template_path}")
         fingerprints = extract_fingerprints(template_path)
 
