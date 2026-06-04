@@ -80,9 +80,10 @@ def align_paragraphs(blocks1: List[ParagraphBlock], blocks2: List[ParagraphBlock
             # Modified
             aligned.append((b1, b2, 'modified'))
 
-    # Remaining paragraphs in blocks2 (at indices beyond len(blocks1)) are new
+    # Remaining paragraphs in blocks2 are new (fixed version)
+    aligned_indices = {b1.index for b1 in blocks1}
     for b2 in blocks2:
-        if b2.index >= len(blocks1):
+        if b2.index not in aligned_indices:
             aligned.append((None, b2, 'new'))
 
     return aligned
