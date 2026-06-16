@@ -174,7 +174,7 @@ def generate_apply_ops(draft_path, profile, skip_head=0, skip_tail=0):
     for i, para in enumerate(paras):
         if i < skip_head or i >= n - skip_tail:
             continue
-        style_name = para.style.name
+        style_name = para.style.name if para.style is not None else "Normal"
         role = None
 
         # Level 0: Direct Heading Match

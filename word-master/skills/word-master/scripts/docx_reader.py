@@ -95,7 +95,7 @@ def extract_rich_markdown(filepath, overview=False):
         text = para.text.strip()
         if not text:
             continue
-        style_name = para.style.name
+        style_name = para.style.name if para.style is not None else "Normal"
         
         # 在大纲模式下，过滤掉非标题样式的段落
         if overview and not style_name.startswith('Heading'):
