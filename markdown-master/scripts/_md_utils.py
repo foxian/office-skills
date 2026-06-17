@@ -54,9 +54,10 @@ def extract_headings(content: str) -> list[tuple[int, str, int]]:
     跳过代码块内的 # 行。
     """
     lines = content.split("\n")
+    code_state = _precompute_code_state(lines)
     headings = []
     for i, line in enumerate(lines):
-        if is_in_code_block(lines, i):
+        if code_state[i]:
             continue
         m = re.match(r"^(#{1,6})\s+(.*)", line)
         if m:
