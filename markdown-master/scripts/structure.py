@@ -8,15 +8,16 @@ import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent))
-from _md_utils import read_utf8, write_utf8, is_in_code_block
+from _md_utils import read_utf8, write_utf8, is_in_code_block, _precompute_code_state
 
 
 def heading_shift(content, delta):
     """delta &gt; 0 升级（减少 #），delta &lt; 0 降级（增加 #）。"""
     lines = content.split("\n")
+    code_state = _precompute_code_state(lines)
     result = []
     for i, line in enumerate(lines):
-        if is_in_code_block(lines, i):
+        if code_state[i]:
             result.append(line)
             continue
         m = re.match(r"^(#{1,6})(\s+.*)", line)
@@ -38,9 +39,10 @@ _NUMBER_PREFIX = re.compile(r"^(?:第[\d]+章\s*|[\d]+[、，]\s*|（[\d]+）\s*
 
 def numbering_remove(content):
     lines = content.split("\n")
+    code_state = _precompute_code_state(lines)
     result = []
     for i, line in enumerate(lines):
-        if is_in_code_block(lines, i):
+        if code_state[i]:
             result.append(line)
             continue
         m = re.match(r"^(#{1,6})\s+(.*)", line)
@@ -134,9 +136,10 @@ def _heading_to_anchor(text):
 
 def toc_generate(content, depth, position):
     lines = content.split("\n")
+    code_state = _precompute_code_state(lines)
     headings = []
     for i, line in enumerate(lines):
-        if is_in_code_block(lines, i):
+        if code_state[i]:
             continue
         m = re.match(r"^(#{1,6})\s+(.*)", line)
         if m:
