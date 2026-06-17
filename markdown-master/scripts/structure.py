@@ -11,6 +11,71 @@ sys.path.insert(0, str(Path(__file__).parent))
 from _md_utils import read_utf8, write_utf8, is_in_code_block, _precompute_code_state
 
 
+_TEMPLATE_TOKEN_RE = re.compile(r"\{(\d+)(?::([^\}]+))?\}")
+
+
+def parse_template(template):
+    """
+    解析模板字符串为 token 列表。
+
+    模板示例: "第{1}章 " -> [("text", "第"), ("num", 1, "d"), ("text", "章 ")]
+
+    token 类型:
+        ("text", str)              - 字面文本
+        ("num", int 1..6, str fmt) - 数字占位符，fmt 默认为 "d"
+
+    fmt 修饰符:
+        d           十进制
+        0Nd         N 位补零十进制 (N>=1)
+        R / r       大写/小写罗马
+        A / a       大写/小写字母
+        cn          中文数字
+
+    Raises:
+        ValueError: 模板语法错误
+    """
+    if not template:
+        return [("text", "")]
+
+    tokens = []
+    pos = 0
+    for m in _TEMPLATE_TOKEN_RE.finditer(template):
+        if m.start() > pos:
+            tokens.append(("text", template[pos:m.start()]))
+
+        level = int(m.group(1))
+        fmt_raw = m.group(2) or "d"
+
+        if level < 1 or level > 6:
+            raise ValueError("级别必须在 1-6 之间: " + m.group(0))
+
+        fmt = _validate_format(fmt_raw, m.group(0))
+        tokens.append(("num", level, fmt))
+        pos = m.end()
+
+    if pos < len(template):
+        tokens.append(("text", template[pos:]))
+
+    if not tokens:
+        return [("text", template)]
+
+    return tokens
+
+
+def _validate_format(fmt_raw, source):
+    """校验并规范化修饰符。返回内部表示的 fmt 串。"""
+    if fmt_raw in ("d", "R", "r", "A", "a", "cn"):
+        return fmt_raw
+    # 0Nd 形式
+    m = re.match(r"^0(\d+)d$", fmt_raw)
+    if m:
+        width = int(m.group(1))
+        if width < 1:
+            raise ValueError("宽度必须为正整数: " + source)
+        return fmt_raw
+    raise ValueError("未知修饰符: " + source)
+
+
 def heading_shift(content, delta):
     """delta &gt; 0 升级（减少 #），delta &lt; 0 降级（增加 #）。"""
     lines = content.split("\n")
