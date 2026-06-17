@@ -222,6 +222,46 @@ def numbering_remove(content):
     return "\n".join(result)
 
 
+def numbering_add_flex(content, level_templates, start_from=1):
+    """
+    按每级独立模板添加编号。
+    level_templates: dict[1..6] = str，缺失键或 None 表示该级不输出编号。
+    空串 "" 也表示该级不输出。
+    start_from: h1 起始编号（仅当 1 in level_templates 时生效）。
+    """
+    content_clean = numbering_remove(content)
+    lines = content_clean.split("\n")
+    code_state = _precompute_code_state(lines)
+
+    counters = [0] * 6
+    if 1 in level_templates and level_templates[1]:
+        counters[0] = start_from - 1
+
+    result = []
+    for i, line in enumerate(lines):
+        if code_state[i]:
+            result.append(line)
+            continue
+        m = re.match(r"^(#{1,6})\s+(.*)", line)
+        if m:
+            level = len(m.group(1))
+            text = m.group(2).strip()
+            counters[level - 1] += 1
+            for j in range(level, 6):
+                counters[j] = 0
+
+            template = level_templates.get(level)
+            if template:
+                tokens = parse_template(template)
+                prefix = format_template(tokens, counters)
+                result.append("#" * level + " " + prefix + text)
+            else:
+                result.append("#" * level + " " + text)
+        else:
+            result.append(line)
+    return "\n".join(result)
+
+
 def numbering_add(content, style, start_from):
     lines = content.split("\n")
     content_clean = numbering_remove(content)
