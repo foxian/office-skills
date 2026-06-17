@@ -8,7 +8,7 @@ import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent))
-from _md_utils import read_utf8, write_utf8, is_in_code_block
+from _md_utils import read_utf8, write_utf8, is_in_code_block, _precompute_code_state
 
 
 def _sanitize_filename(text):
@@ -25,6 +25,7 @@ def cmd_split(input_path, by, output_dir):
     level = int(by[1])
     content = read_utf8(input_path)
     lines = content.split("\n")
+    code_state = _precompute_code_state(lines)
 
     out_dir = Path(output_dir) if output_dir else Path(input_path).parent / "split_output"
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -34,7 +35,7 @@ def cmd_split(input_path, by, output_dir):
     current_lines = []
 
     for i, line in enumerate(lines):
-        if is_in_code_block(lines, i):
+        if code_state[i]:
             current_lines.append(line)
             continue
         m = re.match(r"^(#{1,6})\s+(.*)", line)
