@@ -200,7 +200,7 @@ def heading_shift(content, delta):
     return "\n".join(result)
 
 
-_NUMBER_PREFIX = re.compile(r"^(?:第[\d]+章\s*|[\d]+[、，]\s*|（[\d]+）\s*|[IVXLCDM]+\s+|[A-Z]\s+|[a-z]\s+|[\d]+(?:\.[\d]+)*\.?\s+)")
+_NUMBER_PREFIX = re.compile(r"^(?:第[\d零一二三四五六七八九十百千万]+章\s*|[\d零一二三四五六七八九十百千万]+[、，.．]\s*|[\d零一二三四五六七八九十百千万]+\s+|\([\d零一二三四五六七八九十百千万]+\)\s*|（[\d零一二三四五六七八九十百千万]+）\s*|【[\d零一二三四五六七八九十百千万]+】\s*|[IVXLCDMivxlcdm]+\.\s+|[A-Za-z]\.\s+|\s+)")
 
 
 def numbering_remove(content):
