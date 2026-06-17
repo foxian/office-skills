@@ -9,11 +9,12 @@ import urllib.request
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent))
-from _md_utils import read_utf8, write_utf8, is_in_code_block
+from _md_utils import read_utf8, write_utf8, is_in_code_block, _precompute_code_state
 
 
 def run_lint(content, fix):
     lines = content.split("\n")
+    code_state = _precompute_code_state(lines)
     issues = []
     result_lines = list(lines)
 
@@ -29,7 +30,7 @@ def run_lint(content, fix):
     # 2. 标题层级跳跃
     prev_level = 0
     for i, line in enumerate(lines):
-        if is_in_code_block(lines, i):
+        if code_state[i]:
             continue
         m = re.match(r"^(#{1,6})\s+", line)
         if m:
@@ -80,11 +81,12 @@ def _is_inline_code(line, pos):
 
 def run_zhlint(content, fix):
     lines = content.split("\n")
+    code_state = _precompute_code_state(lines)
     issues = []
     result_lines = []
 
     for i, line in enumerate(lines):
-        if is_in_code_block(lines, i):
+        if code_state[i]:
             result_lines.append(line)
             continue
 
@@ -120,10 +122,11 @@ _MD_IMAGE = re.compile(r"!\[.*?\]\((.*?)\)")
 def run_linkcheck(content, file_path, check_remote):
     base_dir = Path(file_path).parent
     lines = content.split("\n")
+    code_state = _precompute_code_state(lines)
     issues = []
 
     for i, line in enumerate(lines):
-        if is_in_code_block(lines, i):
+        if code_state[i]:
             continue
 
         # 图片引用
