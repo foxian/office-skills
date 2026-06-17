@@ -7,6 +7,11 @@ import re
 import sys
 from pathlib import Path
 
+try:
+    import yaml as _yaml
+except ImportError:
+    _yaml = None
+
 sys.path.insert(0, str(Path(__file__).parent))
 from _md_utils import read_utf8, write_utf8, is_in_code_block, _precompute_code_state
 
@@ -175,6 +180,71 @@ def format_template(tokens, counters):
             else:
                 parts.append(str(n))
     return "".join(parts)
+
+
+def load_config(path):
+    """
+    从 YAML 文件加载编号配置。
+    返回 dict: {1..6: str | None, "start_from": int}
+    模板语法在加载时校验，错误抛出 ValueError。
+    """
+    if _yaml is None:
+        raise ImportError("YAML 支持需要 pyyaml，请运行: pip install pyyaml")
+    p = Path(path)
+    if not p.exists():
+        raise FileNotFoundError("配置文件不存在: " + str(path))
+    try:
+        raw = _yaml.safe_load(p.read_text(encoding="utf-8"))
+    except _yaml.YAMLError as e:
+        raise ValueError("YAML 解析失败: " + str(e)) from e
+    if not isinstance(raw, dict):
+        raise ValueError("YAML 顶层必须是 mapping")
+
+    cfg = {i: None for i in range(1, 7)}
+    cfg["start_from"] = 1
+
+    for i in range(1, 7):
+        val = raw.get("h" + str(i))
+        if val is None:
+            cfg[i] = None
+        elif isinstance(val, str):
+            cfg[i] = val
+        else:
+            raise ValueError("h" + str(i) + " 必须是字符串")
+
+    sf = raw.get("start_from", 1)
+    if not isinstance(sf, int) or sf < 1:
+        raise ValueError("start_from 必须是 >= 1 的整数")
+    cfg["start_from"] = sf
+
+    # 校验所有非空模板
+    for i in range(1, 7):
+        if cfg[i] is not None and cfg[i] != "":
+            parse_template(cfg[i])  # 失败则抛 ValueError
+
+    return cfg
+
+
+def save_config(path, cfg):
+    """
+    将配置写到 YAML 文件。
+    字段顺序固定: h1..h6 -> start_from。
+    None 规范化为 ""。
+    """
+    if _yaml is None:
+        raise ImportError("YAML 支持需要 pyyaml，请运行: pip install pyyaml")
+    out = {}
+    for i in range(1, 7):
+        v = cfg.get(i)
+        out["h" + str(i)] = v if v else ""
+    out["start_from"] = cfg.get("start_from", 1)
+
+    p = Path(path)
+    p.parent.mkdir(parents=True, exist_ok=True)
+    p.write_text(
+        _yaml.dump(out, allow_unicode=True, sort_keys=False, default_flow_style=False),
+        encoding="utf-8",
+    )
 
 
 def heading_shift(content, delta):
