@@ -76,6 +76,107 @@ def _validate_format(fmt_raw, source):
     raise ValueError("未知修饰符: " + source)
 
 
+_ROMAN_VALS = [(1000, 'M'), (900, 'CM'), (500, 'D'), (400, 'CD'),
+                (100, 'C'), (90, 'XC'), (50, 'L'), (40, 'XL'),
+                (10, 'X'), (9, 'IX'), (5, 'V'), (4, 'IV'), (1, 'I')]
+_ROMAN_LOWER_VALS = [(v, s.lower()) for v, s in _ROMAN_VALS]
+
+
+def _to_roman(n, lower=False):
+    """转换为罗马数字（1..3999 范围，超过则重复 M）。"""
+    if n < 1:
+        return "0" if lower else "0"
+    vals = _ROMAN_LOWER_VALS if lower else _ROMAN_VALS
+    result = []
+    for v, s in vals:
+        while n >= v:
+            result.append(s)
+            n -= v
+    if n > 0:
+        result.append("M" if not lower else "m")
+    return "".join(result)
+
+
+def _to_letter(n, upper=True):
+    """转换为字母 (1=A..Z=26, 27=AA..)"""
+    if n < 1:
+        return ""
+    base = 65 if upper else 97
+    result = []
+    while n > 0:
+        n -= 1
+        result.append(chr(base + n % 26))
+        n //= 26
+    return "".join(reversed(result))
+
+
+_CN_DIGITS = ["零", "一", "二", "三", "四", "五", "六", "七", "八", "九"]
+_CN_UNITS = ["", "十", "百", "千"]
+_CN_BIG_UNITS = ["", "万", "亿"]
+
+
+def _to_chinese(n):
+    """转换为中文数字 (0..999 范围)。"""
+    if n == 0:
+        return "零"
+    if n < 0:
+        return "负" + _to_chinese(-n)
+    if n < 10:
+        return _CN_DIGITS[n]
+    if n < 20:
+        return "十" + (_CN_DIGITS[n - 10] if n > 10 else "")
+    parts = []
+    s = str(n)
+    for i, ch in enumerate(s):
+        d = int(ch)
+        unit_pos = len(s) - i - 1
+        if d == 0:
+            if parts and parts[-1] != "零":
+                parts.append("零")
+        else:
+            parts.append(_CN_DIGITS[d] + _CN_UNITS[unit_pos])
+    result = "".join(parts)
+    if result.endswith("零"):
+        result = result[:-1]
+    return result
+
+
+def format_template(tokens, counters):
+    """
+    根据 token 列表和当前计数器值渲染模板。
+    counters: list[int], 长度 6，counters[i] = 第 i+1 级的当前值。
+    """
+    parts = []
+    for tok in tokens:
+        if tok[0] == "text":
+            parts.append(tok[1])
+        elif tok[0] == "num":
+            level = tok[1]
+            fmt = tok[2]
+            n = counters[level - 1]
+            if fmt == "d":
+                parts.append(str(n))
+            elif fmt == "R":
+                parts.append(_to_roman(n, lower=False))
+            elif fmt == "r":
+                parts.append(_to_roman(n, lower=True))
+            elif fmt == "A":
+                parts.append(_to_letter(n, upper=True))
+            elif fmt == "a":
+                parts.append(_to_letter(n, upper=False))
+            elif fmt == "cn":
+                if n > 999:
+                    sys.stderr.write("[warning] 中文数字超出 999 范围: " + str(n) + "\n")
+                    parts.append("###")
+                else:
+                    parts.append(_to_chinese(n))
+            elif re.match(r"^0\d+d$", fmt):
+                parts.append(format(n, fmt))
+            else:
+                parts.append(str(n))
+    return "".join(parts)
+
+
 def heading_shift(content, delta):
     """delta &gt; 0 升级（减少 #），delta &lt; 0 降级（增加 #）。"""
     lines = content.split("\n")
