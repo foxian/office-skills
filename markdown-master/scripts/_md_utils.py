@@ -5,6 +5,8 @@
 import re
 from pathlib import Path
 
+_FENCE_RE = re.compile(r"^(`{3,}|~{3,})")
+
 
 def read_utf8(path: str) -> str:
     """读取 UTF-8 文件内容，自动处理 BOM。"""
@@ -70,6 +72,11 @@ def is_in_code_block(lines: list[str], line_index: int) -> bool:
     """
     fence_count = 0
     for i in range(line_index):
-        if re.match(r"^(`{3,}|~{3,})", lines[i]):
+        if is_fence_line(lines[i]):
             fence_count += 1
     return fence_count % 2 == 1
+
+
+def is_fence_line(line):
+    """判断单行是否是代码块围栏（``` 或 ~~~）开头。"""
+    return bool(_FENCE_RE.match(line))
