@@ -80,3 +80,14 @@ def is_in_code_block(lines: list[str], line_index: int) -> bool:
 def is_fence_line(line):
     """判断单行是否是代码块围栏（``` 或 ~~~）开头。"""
     return bool(_FENCE_RE.match(line))
+
+
+def _precompute_code_state(lines):
+    """一遍 O(n) 扫描，返回每行是否处于代码块内的 bool 列表。"""
+    state = [False] * len(lines)
+    in_block = False
+    for i, line in enumerate(lines):
+        state[i] = in_block
+        if is_fence_line(line):
+            in_block = not in_block
+    return state
