@@ -248,7 +248,7 @@ def save_config(path, cfg):
 
 
 def heading_shift(content, delta):
-    """delta &gt; 0 升级（减少 #），delta &lt; 0 降级（增加 #）。"""
+    """delta > 0 升级（减少 #），delta < 0 降级（增加 #）。"""
     lines = content.split("\n")
     code_state = _precompute_code_state(lines)
     result = []
@@ -260,9 +260,9 @@ def heading_shift(content, delta):
         if m:
             level = len(m.group(1))
             new_level = level - delta
-            if new_level &lt; 1:
+            if new_level < 1:
                 new_level = 1
-            if new_level &gt; 6:
+            if new_level > 6:
                 new_level = 6
             result.append("#" * new_level + m.group(2))
         else:
@@ -332,74 +332,26 @@ def numbering_add_flex(content, level_templates, start_from=1):
     return "\n".join(result)
 
 
-def numbering_add(content, style, start_from):
-    lines = content.split("\n")
-    content_clean = numbering_remove(content)
-    lines = content_clean.split("\n")
+def _resolve_templates(args):
+    """
+    合并 config 文件与 CLI 参数，得到最终 level_templates dict。
+    优先级: config[1..6] < --h1..--h6
+    """
+    level_templates = {i: None for i in range(1, 7)}
+    start_from = 1
 
-    counters = [0] * 6
-    counters[0] = start_from - 1
-    result = []
+    if args.config:
+        cfg = load_config(args.config)
+        for i in range(1, 7):
+            level_templates[i] = cfg[i]
+        start_from = cfg.get("start_from", 1)
 
-    for i, line in enumerate(lines):
-        if is_in_code_block(lines, i):
-            result.append(line)
-            continue
-        m = re.match(r"^(#{1,6})\s+(.*)", line)
-        if m:
-            level = len(m.group(1))
-            text = m.group(2).strip()
-            counters[level - 1] += 1
-            for j in range(level, 6):
-                counters[j] = 0
+    for i in range(1, 7):
+        cli_val = getattr(args, "h" + str(i))
+        if cli_val is not None:
+            level_templates[i] = cli_val
 
-            prefix = ""
-            if style == "technical":
-                parts = []
-                for k in range(level):
-                    parts.append(str(counters[k]))
-                prefix = ".".join(parts) + " "
-            elif style == "chinese_chapter":
-                if level == 1:
-                    prefix = "第" + str(counters[0]) + "章 "
-                elif level == 2:
-                    prefix = str(counters[1]) + "、"
-                elif level == 3:
-                    prefix = "（" + str(counters[2]) + "）"
-                else:
-                    prefix = str(counters[level-1]) + ". "
-            elif style == "chinese_bidding":
-                if level == 1:
-                    prefix = str(counters[0]) + "、"
-                else:
-                    parts = []
-                    for k in range(level):
-                        parts.append(str(counters[k]))
-                    prefix = ".".join(parts) + " "
-            elif style == "academic":
-                if level == 1:
-                    roman = ""
-                    n = counters[0]
-                    vals = [(1000,'M'),(900,'CM'),(500,'D'),(400,'CD'),(100,'C'),(90,'XC'),
-                            (50,'L'),(40,'XL'),(10,'X'),(9,'IX'),(5,'V'),(4,'IV'),(1,'I')]
-                    for v, s in vals:
-                        while n &gt;= v:
-                            roman += s
-                            n -= v
-                    prefix = roman + " "
-                elif level == 2:
-                    prefix = chr(64 + counters[1]) + " "
-                elif level == 3:
-                    prefix = str(counters[2]) + " "
-                else:
-                    prefix = chr(96 + counters[level-1]) + " "
-            else:
-                prefix = str(counters[level-1]) + " "
-
-            result.append("#" * level + " " + prefix + text)
-        else:
-            result.append(line)
-    return "\n".join(result)
+    return level_templates, start_from
 
 
 def _heading_to_anchor(text):
@@ -421,23 +373,23 @@ def toc_generate(content, depth, position):
         if m:
             level = len(m.group(1))
             text = m.group(2).strip()
-            if level &lt;= depth:
+            if level <= depth:
                 headings.append((level, text))
 
     if not headings:
         return content
 
     min_level = min(h[0] for h in headings)
-    toc_lines = ["&lt;!-- TOC --&gt;"]
+    toc_lines = ["<!-- TOC -->"]
     for level, text in headings:
         indent = "  " * (level - min_level)
         clean_text = _NUMBER_PREFIX.sub("", text).strip()
         anchor = _heading_to_anchor(text)
         toc_lines.append(indent + "- [" + clean_text + "](#" + anchor + ")")
-    toc_lines.append("&lt;!-- /TOC --&gt;")
+    toc_lines.append("<!-- /TOC -->")
     toc_block = "\n".join(toc_lines)
 
-    content = re.sub(r"&lt;!-- TOC --&gt;.*?&lt;!-- /TOC --&gt;", "", content, flags=re.DOTALL).strip()
+    content = re.sub(r"<!-- TOC -->.*?<!-- /TOC -->", "", content, flags=re.DOTALL).strip()
     lines = content.split("\n")
 
     if position == "top":
@@ -459,10 +411,13 @@ def main():
     parser.add_argument("subaction", help="子操作")
     parser.add_argument("-o", "--output", help="输出文件路径")
     parser.add_argument("--levels", type=int, default=1, help="heading 操作的级别数")
-    parser.add_argument("--style", help="编号样式")
-    parser.add_argument("--start-from", type=int, default=1, dest="start_from", help="h1 起始编号")
+    parser.add_argument("--start-from", type=int, default=None, dest="start_from", help="h1 起始编号")
     parser.add_argument("--depth", type=int, default=3, help="TOC 最深标题级别")
     parser.add_argument("--position", choices=["top", "after-h1"], default="after-h1", help="TOC 插入位置")
+    parser.add_argument("--config", help="编号配置文件 (YAML)")
+    parser.add_argument("--save-config", dest="save_config", help="保存编号配置到 YAML 文件（不执行编号）")
+    for i in range(1, 7):
+        parser.add_argument("--h" + str(i), help="第 " + str(i) + " 级编号模板")
 
     args = parser.parse_args()
     content = read_utf8(args.input)
@@ -479,9 +434,26 @@ def main():
         if args.subaction == "remove":
             result = numbering_remove(content)
         elif args.subaction == "add":
-            if not args.style:
-                parser.error("需要 --style 参数")
-            result = numbering_add(content, args.style, args.start_from)
+            if args.config and args.save_config:
+                parser.error("--config 和 --save-config 不能同时使用")
+            level_templates, cfg_start = _resolve_templates(args)
+            cli_h1 = any(getattr(args, "h" + str(i)) for i in range(1, 7))
+            if not (cli_h1 or args.config):
+                parser.error("需要 --h1..--h6 或 --config 参数")
+            if not any(v for v in level_templates.values()):
+                parser.error("至少需要为一个级别提供模板")
+
+            if args.save_config:
+                cfg = dict(level_templates)
+                cfg["start_from"] = args.start_from if args.start_from is not None else cfg_start
+                save_config(args.save_config, cfg)
+                print("配置已保存到: " + args.save_config)
+                return
+            elif args.start_from is not None:
+                start_from = args.start_from
+            else:
+                start_from = cfg_start
+            result = numbering_add_flex(content, level_templates, start_from=start_from)
         else:
             parser.error("不支持的子操作")
 
@@ -498,4 +470,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
