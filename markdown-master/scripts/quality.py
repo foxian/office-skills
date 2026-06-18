@@ -35,18 +35,18 @@ def run_lint(content, fix):
         m = re.match(r"^(#{1,6})\s+", line)
         if m:
             level = len(m.group(1))
-            if prev_level &gt; 0 and level &gt; prev_level + 1:
-                issues.append((i + 1, "标题层级跳跃：H" + str(prev_level) + " -&gt; H" + str(level)))
+            if prev_level > 0 and level > prev_level + 1:
+                issues.append((i + 1, "标题层级跳跃：H" + str(prev_level) + " -> H" + str(level)))
             prev_level = level
 
     # 3. 连续 3 行以上空行
     i = 0
-    while i &lt; len(result_lines):
+    while i < len(result_lines):
         if result_lines[i].strip() == "":
             j = i
-            while j &lt; len(result_lines) and result_lines[j].strip() == "":
+            while j < len(result_lines) and result_lines[j].strip() == "":
                 j += 1
-            if j - i &gt;= 3:
+            if j - i >= 3:
                 issues.append((i + 1, "连续空行过多"))
                 if fix:
                     result_lines[i:j] = ["", ""]
@@ -62,7 +62,7 @@ def run_lint(content, fix):
     return "\n".join(result_lines), issues
 
 
-_ZH = r"[一-鿿㐀-䶿豈-﫿]"
+_ZH = r"[一-鿿㐀-䶿豈-﫿]"
 _EN = r"[A-Za-z0-9]"
 _ZH_BEFORE_EN = re.compile(r"(" + _ZH + ")(" + _EN + r")")
 _EN_BEFORE_ZH = re.compile(r"(" + _EN + ")(" + _ZH + r")")
@@ -138,7 +138,7 @@ def run_linkcheck(content, file_path, check_remote):
                         req = urllib.request.Request(src, method="HEAD")
                         req.add_header("User-Agent", "markdown-master-linkcheck/1.0")
                         with urllib.request.urlopen(req, timeout=5) as resp:
-                            if resp.status &gt;= 400:
+                            if resp.status >= 400:
                                 issues.append((i + 1, "远程链接返回 " + str(resp.status) + ": " + src))
                     except Exception as e:
                         issues.append((i + 1, "远程链接无法访问: " + src))
@@ -158,7 +158,7 @@ def run_linkcheck(content, file_path, check_remote):
                         req = urllib.request.Request(href, method="HEAD")
                         req.add_header("User-Agent", "markdown-master-linkcheck/1.0")
                         with urllib.request.urlopen(req, timeout=5) as resp:
-                            if resp.status &gt;= 400:
+                            if resp.status >= 400:
                                 issues.append((i + 1, "远程链接返回 " + str(resp.status) + ": " + href))
                     except Exception as e:
                         issues.append((i + 1, "远程链接无法访问: " + href))
@@ -175,7 +175,7 @@ def print_issues(issues, action):
         print("✓ No issues found (" + action + ")")
         return
     for line_no, desc in issues:
-        loc = "L" + str(line_no) if line_no &gt; 0 else "文档级"
+        loc = "L" + str(line_no) if line_no > 0 else "文档级"
         print("  [" + loc + "] " + desc)
     print("\n共发现 " + str(len(issues)) + " 个问题")
 
@@ -211,4 +211,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-

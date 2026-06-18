@@ -16,7 +16,7 @@ def _sanitize_filename(text):
     # 移除编号前缀
     text = re.sub(r"^(?:第[\d]+章\s*|[\d]+[、，]\s*|（[\d]+）\s*|[IVXLCDM]+\s+|[A-Z]\s+|[\d]+(?:\.[\d]+)*\.?\s+)", "", text).strip()
     # 替换 Windows/Linux 非法字符
-    text = re.sub(r'[\\/:*?"&lt;&gt;|]', "_", text)
+    text = re.sub(r'[\\/:*?"<>|]', "_", text)
     text = text.strip(". ")
     return text[:80] or "untitled"
 
@@ -63,7 +63,7 @@ def cmd_split(input_path, by, output_dir):
         print("  ✓ " + str(fpath))
         count += 1
 
-    print("\n共拆分为 " + str(count) + " 个文件 -&gt; " + str(out_dir))
+    print("\n共拆分为 " + str(count) + " 个文件 -> " + str(out_dir))
 
 
 def cmd_merge(inputs, output, separator):
@@ -89,7 +89,7 @@ def cmd_merge(inputs, output, separator):
 
     merged = separator.join(parts)
     write_utf8(output, merged)
-    print("\n✓ 已合并 " + str(len(parts)) + " 个文件 -&gt; " + output)
+    print("\n✓ 已合并 " + str(len(parts)) + " 个文件 -> " + output)
 
 
 def main():
@@ -118,4 +118,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-

@@ -1,6 +1,6 @@
 
 """
-格式转换：Markdown -&gt; DOCX / HTML / TXT / PDF
+格式转换：Markdown -> DOCX / HTML / TXT / PDF
 """
 import argparse
 import re
@@ -13,7 +13,7 @@ from _md_utils import read_utf8
 
 def to_html(content):
     import markdown as md_lib
-    css = """&lt;style&gt;
+    css = """<style>
 body { font-family: 'Segoe UI', Arial, sans-serif; max-width: 860px; margin: 40px auto; padding: 0 20px; line-height: 1.7; }
 h1,h2,h3,h4,h5,h6 { border-bottom: 1px solid #eee; padding-bottom: 4px; }
 code { background: #f4f4f4; padding: 2px 6px; border-radius: 3px; font-family: monospace; }
@@ -22,16 +22,16 @@ blockquote { border-left: 4px solid #ccc; margin: 0; padding: 0 16px; color: #66
 table { border-collapse: collapse; width: 100%; }
 th, td { border: 1px solid #ddd; padding: 8px 12px; }
 th { background: #f0f0f0; }
-&lt;/style&gt;"""
+</style>"""
     html_body = md_lib.markdown(content, extensions=["tables", "fenced_code", "toc", "nl2br"])
-    return "&lt;!DOCTYPE html&gt;\n&lt;html&gt;\n&lt;head&gt;\n&lt;meta charset='utf-8'&gt;\n" + css + "\n&lt;/head&gt;\n&lt;body&gt;\n" + html_body + "\n&lt;/body&gt;\n&lt;/html&gt;"
+    return "<!DOCTYPE html>\n<html>\n<head>\n<meta charset='utf-8'>\n" + css + "\n</head>\n<body>\n" + html_body + "\n</body>\n</html>"
 
 
 def to_txt(content):
     # 移除 frontmatter
     if content.startswith("---"):
         parts = content.split("---", 2)
-        if len(parts) &gt;= 3:
+        if len(parts) >= 3:
             content = parts[2].strip()
     # 移除 Markdown 标记
     text = re.sub(r"^#{1,6}\s+", "", content, flags=re.MULTILINE)
@@ -43,7 +43,7 @@ def to_txt(content):
     text = re.sub(r"\[(.+?)\]\(.*?\)", r"\1", text)
     text = re.sub(r"^[-*+]\s+", "", text, flags=re.MULTILINE)
     text = re.sub(r"^\d+\.\s+", "", text, flags=re.MULTILINE)
-    text = re.sub(r"^&gt;+\s?", "", text, flags=re.MULTILINE)
+    text = re.sub(r"^>+\s?", "", text, flags=re.MULTILINE)
     text = re.sub(r"^---+$", "", text, flags=re.MULTILINE)
     text = re.sub(r"\n{3,}", "\n\n", text)
     return text.strip()
@@ -111,7 +111,7 @@ def to_docx(content, input_path, template):
             cols = 0
             for row in rows:
                 cell_count = len(row.find_all(["td", "th"]))
-                if cell_count &gt; cols:
+                if cell_count > cols:
                     cols = cell_count
             table = doc.add_table(rows=len(rows), cols=cols)
             table.style = "Table Grid"
@@ -147,7 +147,7 @@ def convert_file(input_path, fmt, output_path, template):
         result = to_pdf(content)
         output_path.write_bytes(result)
 
-    print("✓ " + str(input_path) + " -&gt; " + str(output_path))
+    print("✓ " + str(input_path) + " -> " + str(output_path))
 
 
 def main():
@@ -180,4 +180,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
