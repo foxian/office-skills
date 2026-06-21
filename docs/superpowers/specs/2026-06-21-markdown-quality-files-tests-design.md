@@ -51,7 +51,8 @@
 14. `test_linkcheck_local_link_missing` — `[text](missing.md)`，报"本地链接目标不存在"
 15. `test_linkcheck_anchor_skipped` — `[text](#anchor)` 不报错
 16. `test_linkcheck_link_in_code_block_skipped` — 代码块内的 `![](x.png)` 不报错
-17. 远程分支：不写测试，加注释说明原因
+
+远程分支：不写测试，文件顶部加注释说明原因。
 
 ## test_files.py 用例
 
@@ -98,7 +99,7 @@
 1. 新增两文件后，`python -m pytest tests/` 全绿（含 xfail，xfail 不算失败）
 2. 不破坏现有 6 个测试文件
 3. 不修改 `scripts/` 下任何源码（本次只写测试）
-4. 测试覆盖 §test_quality.py 用例 和 §test_files.py 用例 列出的全部编号
+4. 测试覆盖 test_quality.py 用例（16 个）和 test_files.py 用例（12 个）列出的全部编号
 5. 每个测试函数有中文 docstring 说明被测行为
 
 ### 非目标（明确排除）
