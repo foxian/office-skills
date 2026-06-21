@@ -55,14 +55,9 @@ def run_lint(content, fix):
             i += 1
 
     # 4. 代码块未指定语言
-    in_code_block = False
     for i, line in enumerate(lines):
-        if re.match(r"^```", line):
-            if not in_code_block:
-                # 开始代码块
-                if re.match(r"^```\s*$", line):
-                    issues.append((i + 1, "代码块未指定语言"))
-            in_code_block = not in_code_block
+        if re.match(r"^```\s*$", line):
+            issues.append((i + 1, "代码块未指定语言"))
 
     return "\n".join(result_lines), issues
 
