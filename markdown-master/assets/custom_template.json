@@ -1,0 +1,8 @@
+{
+    "1": "第{level1}章 ",
+    "2": "第{level2}节 ",
+    "3": "{level1}.{level2}.{level3} ",
+    "4": "{level1}.{level2}.{level3}.{level4} ",
+    "5": "{level1}.{level2}.{level3}.{level4}.{level5} ",
+    "6": "{level1}.{level2}.{level3}.{level4}.{level5}.{level6} "
+}

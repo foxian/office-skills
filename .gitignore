@@ -1,0 +1,15 @@
+.claude/
+.trae/
+docs/
+
+# markdown-master
+markdown-master/.pytest_cache/
+markdown-master/examples/
+markdown-master/tests/
+markdown-master/scripts/__pycache__/
+
+# word-master
+word-master/.pytest_cache/
+word-master/examples/
+word-master/tests/
+word-master/scripts/__pycache__/

@@ -1,6 +1,7 @@
 import docx
 from docx.shared import Pt, Emu
 from docx.enum.text import WD_ALIGN_PARAGRAPH
+from docx.oxml.ns import qn
 import sys
 import os
 import json
@@ -74,6 +75,19 @@ def _style_to_dict(style):
     return result
 
 
+def _set_run_east_asia(run, font_name):
+    """Set East Asian font on a run via rFonts/@w:eastAsia."""
+    rpr = run._element.find(qn('w:rPr'))
+    if rpr is None:
+        rpr = run._element.makeelement(qn('w:rPr'), {})
+        run._element.insert(0, rpr)
+    rfonts = rpr.find(qn('w:rFonts'))
+    if rfonts is None:
+        rfonts = rpr.makeelement(qn('w:rFonts'), {})
+        rpr.insert(0, rfonts)
+    rfonts.set(qn('w:eastAsia'), font_name)
+
+
 def _apply_format_to_paragraph(paragraph, fmt):
     """Apply format dict to a paragraph."""
     if not fmt:
@@ -82,6 +96,9 @@ def _apply_format_to_paragraph(paragraph, fmt):
     if "font" in fmt:
         for run in paragraph.runs:
             run.font.name = fmt["font"]
+    if "east_asia" in fmt:
+        for run in paragraph.runs:
+            _set_run_east_asia(run, fmt["east_asia"])
     if "size" in fmt:
         size_pt = float(fmt["size"].rstrip("pt"))
         for run in paragraph.runs:
