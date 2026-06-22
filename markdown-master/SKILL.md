@@ -33,26 +33,26 @@ pip install python-docx markdown beautifulsoup4 weasyprint pyyaml
 
 当用户需要把一份 Markdown 文档整理成正式版本时：
 
-1. **先做格式检查**：`python scripts/quality.py doc.md lint --fix`
-2. **再做中文排版优化**：`python scripts/quality.py doc.md zhlint --fix`
-3. **添加章节编号**：`python scripts/structure.py doc.md numbering add --h1 "第{1}章 " --h2 "{1}.{2} " --h3 "（{3}）"`
-4. **生成目录**：`python scripts/structure.py doc.md toc generate`
-5. **检查链接**：`python scripts/quality.py doc.md linkcheck`
-6. **导出为 Word/PDF**：`python scripts/convert.py doc.md --to docx`
+1. **先做格式检查**：`python ${SKILL_DIR}/scripts/quality.py doc.md lint --fix`
+2. **再做中文排版优化**：`python ${SKILL_DIR}/scripts/quality.py doc.md zhlint --fix`
+3. **添加章节编号**：`python ${SKILL_DIR}/scripts/structure.py doc.md numbering add --h1 "第{1}章 " --h2 "{1}.{2} " --h3 "（{3}）"`
+4. **生成目录**：`python ${SKILL_DIR}/scripts/structure.py doc.md toc generate`
+5. **检查链接**：`python ${SKILL_DIR}/scripts/quality.py doc.md linkcheck`
+6. **导出为 Word/PDF**：`python ${SKILL_DIR}/scripts/convert.py doc.md --to docx`
 
 ### 场景 2：合并多篇文档
 
 当用户有多份 Markdown 文件需要合并成一份时：
 
-1. **合并文件**：`python scripts/files.py merge file1.md file2.md -o combined.md`
-2. **统一调整标题层级**（如果需要）：`python scripts/structure.py combined.md heading upgrade --levels 1`
+1. **合并文件**：`python ${SKILL_DIR}/scripts/files.py merge file1.md file2.md -o combined.md`
+2. **统一调整标题层级**（如果需要）：`python ${SKILL_DIR}/scripts/structure.py combined.md heading upgrade --levels 1`
 3. **后续同场景 1**（lint → zhlint → 编号 → 目录 → 导出）
 
 ### 场景 3：拆分长文档
 
 当用户有一份很长的文档需要按章节拆分成多个文件时：
 
-1. **拆分**：`python scripts/files.py split doc.md --by h2`
+1. **拆分**：`python ${SKILL_DIR}/scripts/files.py split doc.md --by h2`
 2. **检查拆分结果**
 
 ## 命令速查
@@ -61,11 +61,11 @@ pip install python-docx markdown beautifulsoup4 weasyprint pyyaml
 
 | 用法 | 说明 |
 |------|------|
-| `python scripts/structure.py <file> heading upgrade [--levels N]` | 所有标题升 N 级（默认 1）|
-| `python scripts/structure.py <file> heading downgrade [--levels N]` | 所有标题降 N 级 |
-| `python scripts/structure.py <file> numbering add [--h1 T] [--h2 T] ... [--config FILE] [--start-from N] [--save-config FILE]` | 添加灵活编号，每级可独立配置格式，支持从 YAML 加载配置或保存当前配置 |
-| `python scripts/structure.py <file> numbering remove` | 移除所有编号 |
-| `python scripts/structure.py <file> toc generate [--depth N] [--position top\|after-h1]` | 插入/更新目录 |
+| `python ${SKILL_DIR}/scripts/structure.py <file> heading upgrade [--levels N]` | 所有标题升 N 级（默认 1）|
+| `python ${SKILL_DIR}/scripts/structure.py <file> heading downgrade [--levels N]` | 所有标题降 N 级 |
+| `python ${SKILL_DIR}/scripts/structure.py <file> numbering add [--h1 T] [--h2 T] ... [--config FILE] [--start-from N] [--save-config FILE]` | 添加灵活编号，每级可独立配置格式，支持从 YAML 加载配置或保存当前配置 |
+| `python ${SKILL_DIR}/scripts/structure.py <file> numbering remove` | 移除所有编号 |
+| `python ${SKILL_DIR}/scripts/structure.py <file> toc generate [--depth N] [--position top\|after-h1]` | 插入/更新目录 |
 
 所有操作默认覆盖原文件，使用 `-o output.md` 输出到新文件。
 
@@ -99,28 +99,28 @@ start_from: 1
 
 ```bash
 # 技术文档风格（1/1.1/1.1.1）
-python scripts/structure.py doc.md numbering add --h1 "{1} " --h2 "{1}.{2} " --h3 "{1}.{2}.{3} "
+python ${SKILL_DIR}/scripts/structure.py doc.md numbering add --h1 "{1} " --h2 "{1}.{2} " --h3 "{1}.{2}.{3} "
 
 # 中文章节风格（第1章/1.1/（1））
-python scripts/structure.py doc.md numbering add --h1 "第{1}章 " --h2 "{1}.{2} " --h3 "（{3}）"
+python ${SKILL_DIR}/scripts/structure.py doc.md numbering add --h1 "第{1}章 " --h2 "{1}.{2} " --h3 "（{3}）"
 
 # 学术风格（I/A/1/a）
-python scripts/structure.py doc.md numbering add --h1 "{1:R} " --h2 "{2:A} " --h3 "{3} " --h4 "{4:a} "
+python ${SKILL_DIR}/scripts/structure.py doc.md numbering add --h1 "{1:R} " --h2 "{2:A} " --h3 "{3} " --h4 "{4:a} "
 
 # 保存当前配置为模板
-python scripts/structure.py doc.md numbering add --h1 "第{1}章 " --h2 "{1}.{2} " --save-config chinese_chapter.yaml
+python ${SKILL_DIR}/scripts/structure.py doc.md numbering add --h1 "第{1}章 " --h2 "{1}.{2} " --save-config chinese_chapter.yaml
 
 # 使用保存的配置
-python scripts/structure.py doc.md numbering add --config chinese_chapter.yaml
+python ${SKILL_DIR}/scripts/structure.py doc.md numbering add --config chinese_chapter.yaml
 ```
 
 ### quality.py — 质检操作
 
 | 用法 | 说明 |
 |------|------|
-| `python scripts/quality.py <file> lint [--fix]` | 格式规范检查，`--fix` 自动修复可修复项 |
-| `python scripts/quality.py <file> zhlint [--fix]` | 中文排版检查，`--fix` 自动修复 |
-| `python scripts/quality.py <file> linkcheck [--check-remote]` | 本地链接/图片检查，加参数检查 HTTP 链接 |
+| `python ${SKILL_DIR}/scripts/quality.py <file> lint [--fix]` | 格式规范检查，`--fix` 自动修复可修复项 |
+| `python ${SKILL_DIR}/scripts/quality.py <file> zhlint [--fix]` | 中文排版检查，`--fix` 自动修复 |
+| `python ${SKILL_DIR}/scripts/quality.py <file> linkcheck [--check-remote]` | 本地链接/图片检查，加参数检查 HTTP 链接 |
 
 输出格式：`[L行号] 问题描述`，最后汇总问题数。无问题输出 `✓ No issues found`。
 
@@ -137,7 +137,7 @@ python scripts/structure.py doc.md numbering add --config chinese_chapter.yaml
 ### convert.py — 格式转换
 
 ```bash
-python scripts/convert.py <input.md 或 目录/ --to <format> [-o output] [--template template.docx]
+python ${SKILL_DIR}/scripts/convert.py <input.md 或 目录/ --to <format> [-o output] [--template template.docx]
 ```
 
 | 格式 | 说明 |
@@ -153,10 +153,10 @@ python scripts/convert.py <input.md 或 目录/ --to <format> [-o output] [--tem
 
 ```bash
 # 拆分
-python scripts/files.py split <input.md> --by h1|h2|h3 [--output-dir DIR]
+python ${SKILL_DIR}/scripts/files.py split <input.md> --by h1|h2|h3 [--output-dir DIR]
 
 # 合并（支持文件列表或目录）
-python scripts/files.py merge <file1> [file2 ...] -o output.md [--separator SEP]
+python ${SKILL_DIR}/scripts/files.py merge <file1> [file2 ...] -o output.md [--separator SEP]
 ```
 
 split 默认输出到 `<input_dir>/split_output/`，文件名为 `XX_<标题文本>.md`。
