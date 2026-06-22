@@ -3,13 +3,13 @@
 docs/
 
 # markdown-master
-skills/markdown-master/.pytest_cache/
-skills/markdown-master/examples/
-skills/markdown-master/tests/
-skills/markdown-master/scripts/__pycache__/
+markdown-master/.pytest_cache/
+markdown-master/examples/
+markdown-master/tests/
+markdown-master/scripts/__pycache__/
 
 # word-master
-skills/word-master/.pytest_cache/
-skills/word-master/examples/
-skills/word-master/tests/
-skills/word-master/scripts/__pycache__/
+word-master/.pytest_cache/
+word-master/examples/
+word-master/tests/
+word-master/scripts/__pycache__/
