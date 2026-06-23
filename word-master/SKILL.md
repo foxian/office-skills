@@ -36,6 +36,22 @@ Available JSON templates: `default`, `formal`, `casual`
 
 See `${SKILL_DIR}/references/edit-ops.md` for complete DSL specification.
 
+### Table Cell Operations
+
+Read a document with tables → see cell IDs in the form `t{table_idx}r{row_idx}c{col_idx}`
+(e.g. `t0r1c2` = table 0, row 1, column 2). Then target them in operations:
+
+```json
+[
+  {"op": "replace_cell_text", "target": "t0r1c2", "find": "old", "replace": "new"},
+  {"op": "rewrite_cell", "target": "t0r0c0", "content": "Brand new cell content"}
+]
+```
+
+- `replace_cell_text`: in-cell targeted find/replace (preserves run-level formatting).
+- `rewrite_cell`: full cell content replacement (single paragraph, plain text).
+- Invalid target format → `ValueError`; out-of-range indices → `IndexError`.
+
 ---
 
 ## Workflow 1: Edit Mode (修改文档)
@@ -48,7 +64,9 @@ See `${SKILL_DIR}/references/edit-ops.md` for complete DSL specification.
 python ${SKILL_DIR}/scripts/docx_reader.py document.docx --overview
 ```
 
-This outputs rich-text Markdown with paragraph IDs (p0, p1, ...).
+This outputs rich-text Markdown with paragraph IDs (`p0`, `p1`, …) interleaved
+with table cell IDs (`tNrNcN`, e.g. `t0r1c2`). Use the IDs in subsequent edit
+operations. Pass `--overview` to skip tables (paragraphs only).
 
 ### Step 2: Generate Edit Operations
 
