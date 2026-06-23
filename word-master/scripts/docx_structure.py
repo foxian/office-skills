@@ -1,0 +1,194 @@
+"""
+DOCX 标题编号管理：添加/移除编号前缀。
+
+与 markdown-master/scripts/structure.py 的 numbering add/remove 对称，
+但针对 docx 按 style.name 识别标题（而非 md 的 # 前缀），
+编号写为文本前缀（非 Word 原生 numPr）。
+"""
+import re
+import shutil
+import sys
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).parent))
+from _numbering_render import (
+    parse_template, format_template, load_config, save_config,
+)
+
+import docx
+
+_HEADING_RE = re.compile(r"^Heading (\d+)$")
+_HEADING_CN_RE = re.compile(r"^标题\s*(\d+)$")
+
+
+def _detect_heading_level(paragraph):
+    """按 paragraph.style.name 判定标题级别（1-9），非标题返回 None。"""
+    name = paragraph.style.name if paragraph.style else ""
+    for pat in (_HEADING_RE, _HEADING_CN_RE):
+        m = pat.match(name)
+        if m:
+            level = int(m.group(1))
+            if 1 <= level <= 9:
+                return level
+    return None
+
+
+_NUMBER_PREFIX_RE = re.compile(
+    r"^("
+    r"第[\d]+章\s*"
+    r"|第[零一二三四五六七八九十百千]+章\s*"
+    r"|[\d]+[、，]\s*"
+    r"|（[\d]+）\s*"
+    r"|[IVXLCDM]+\s+"
+    r"|[ivxlcdm]+\s+"
+    r"|[A-Z]\s+"
+    r"|[a-z]\s+"
+    r"|[\d]+(?:\.[\d]+)*\.?\s+"
+    r")"
+)
+
+
+def _strip_prefix(text):
+    """剥除标题文本开头的编号前缀（只剥一次）。"""
+    return _NUMBER_PREFIX_RE.sub("", text, count=1)
+
+
+def _save_docx(doc, docx_path, output_path):
+    """保存 docx。output_path 给定则写新文件；否则覆盖原文件并生成 .bak。"""
+    if output_path:
+        doc.save(output_path)
+    else:
+        shutil.copy2(docx_path, docx_path + ".bak")
+        doc.save(docx_path)
+
+
+def cmd_numbering_add(docx_path, level_templates, start_from=1,
+                      output_path=None, save_config_path=None):
+    """
+    给 docx 的标题段落添加编号前缀。
+
+    level_templates: dict[1..6] = str | None，空串/None 表示该级不编号。
+    start_from: h1 起始编号。
+    output_path: 给定则输出到新文件；None 则覆盖原文件并生成 .bak。
+    save_config_path: 给定则把当前模板存成 YAML（同时仍执行编号）。
+    """
+    doc = docx.Document(docx_path)
+    counters = [0] * 6
+    if level_templates.get(1):
+        counters[0] = start_from - 1
+
+    for para in doc.paragraphs:
+        level = _detect_heading_level(para)
+        if level is None or level > 6:
+            continue
+        template = level_templates.get(level)
+        if not template:
+            continue
+        counters[level - 1] += 1
+        for j in range(level, 6):
+            counters[j] = 0
+
+        tokens = parse_template(template)
+        prefix = format_template(tokens, counters)
+
+        if not para.runs:
+            para.add_run(prefix)
+        else:
+            stripped = _strip_prefix(para.runs[0].text)
+            para.runs[0].text = prefix + stripped
+
+    _save_docx(doc, docx_path, output_path)
+
+    if save_config_path:
+        cfg = dict(level_templates)
+        cfg["start_from"] = start_from
+        save_config(save_config_path, cfg)
+
+
+def cmd_numbering_remove(docx_path, output_path=None):
+    """
+    移除 docx 所有标题段落的编号前缀。
+
+    output_path: 给定则输出到新文件；None 则覆盖原文件并生成 .bak。
+    策略 B：只改 run[0].text，其余 run 不动。
+    """
+    doc = docx.Document(docx_path)
+    for para in doc.paragraphs:
+        if _detect_heading_level(para) is None:
+            continue
+        if not para.runs:
+            continue
+        para.runs[0].text = _strip_prefix(para.runs[0].text)
+    _save_docx(doc, docx_path, output_path)
+
+
+def _resolve_templates(args):
+    """
+    合并 config 文件与 CLI 参数，得到最终 level_templates dict。
+    优先级: config[1..6] < --h1..--h6
+    """
+    level_templates = {i: None for i in range(1, 7)}
+    start_from = 1
+
+    if args.config:
+        cfg = load_config(args.config)
+        for i in range(1, 7):
+            level_templates[i] = cfg[i]
+        start_from = cfg.get("start_from", 1)
+
+    for i in range(1, 7):
+        cli_val = getattr(args, "h" + str(i))
+        if cli_val is not None:
+            level_templates[i] = cli_val
+
+    if args.start_from is not None:
+        start_from = args.start_from
+
+    return level_templates, start_from
+
+
+def main():
+    import argparse
+    parser = argparse.ArgumentParser(description="DOCX 标题编号管理")
+    parser.add_argument("input", help="输入 DOCX 文件路径")
+    parser.add_argument("action", choices=["numbering"], help="操作类型")
+    parser.add_argument("subaction", choices=["add", "remove"], help="子操作")
+    parser.add_argument("-o", "--output", help="输出文件路径")
+    parser.add_argument("--config", help="编号配置文件 (YAML)")
+    parser.add_argument("--save-config", dest="save_config",
+                        help="保存编号配置到 YAML 文件")
+    parser.add_argument("--start-from", type=int, default=None, dest="start_from",
+                        help="h1 起始编号")
+    for i in range(1, 7):
+        parser.add_argument("--h" + str(i), help="第 " + str(i) + " 级编号模板")
+
+    args = parser.parse_args()
+
+    if args.action == "numbering":
+        if args.subaction == "add":
+            if args.config and args.save_config:
+                parser.error("--config 和 --save-config 不能同时使用")
+            level_templates, start_from = _resolve_templates(args)
+            cli_h = any(getattr(args, "h" + str(i)) for i in range(1, 7))
+            if not (cli_h or args.config):
+                parser.error("需要 --h1..--h6 或 --config 参数")
+            if not any(v for v in level_templates.values()):
+                parser.error("至少需要为一个级别提供模板")
+
+            if args.save_config:
+                cfg = dict(level_templates)
+                cfg["start_from"] = start_from
+                save_config(args.save_config, cfg)
+                print("配置已保存到: " + args.save_config)
+                return
+
+            cmd_numbering_add(
+                args.input, level_templates, start_from,
+                output_path=args.output, save_config_path=None,
+            )
+        elif args.subaction == "remove":
+            cmd_numbering_remove(args.input, output_path=args.output)
+
+
+if __name__ == "__main__":
+    main()
