@@ -22,6 +22,7 @@ description: >
 | `${SKILL_DIR}/scripts/style_transfer.py` | Apply template style profile to a target DOCX |
 | `${SKILL_DIR}/scripts/template_analyzer.py` | Extract comprehensive format profile (paragraphs + tables) |
 | `${SKILL_DIR}/scripts/table_analyzer.py` | Extract table style fingerprints (library) |
+| `${SKILL_DIR}/scripts/docx_structure.py` | 标题编号管理（添加/移除），支持灵活模板 |
 
 ## Format Templates
 
@@ -178,3 +179,75 @@ python ${SKILL_DIR}/scripts/docx_diff.py draft.docx output.docx
 2. **Test-driven**: Write failing test first, then implement
 3. **Commit frequently**: Each task should be a separate commit
 4. **Backup first**: docx_editor.py always creates .bak backup before editing
+
+---
+
+## Heading Numbering
+
+标题编号管理：给 docx 的标题段落添加/移除编号前缀（文本前缀方案，非 Word 原生 numPr）。
+与 markdown-master 的 `structure.py numbering` 对称，模板语法和 YAML 配置完全一致。
+
+### CLI
+
+```bash
+# 添加编号
+python ${SKILL_DIR}/scripts/docx_structure.py <file.docx> numbering add \
+    [--h1 T] [--h2 T] [--h3 T] [--h4 T] [--h5 T] [--h6 T] \
+    [--config FILE] [--start-from N] [--save-config FILE] \
+    [-o output.docx]
+
+# 移除编号
+python ${SKILL_DIR}/scripts/docx_structure.py <file.docx> numbering remove [-o output.docx]
+```
+
+默认覆盖原文件并生成 `.bak` 备份；`-o` 输出到新文件时不生成 `.bak`。
+
+### 编号模板语法
+
+| 占位符 | 含义 | 示例 |
+|---------|------|------|
+| `{N}` / `{N:d}` | 十进制数字 | 3 |
+| `{N:02d}` | 两位补零十进制数字 | 03 |
+| `{N:R}` | 大写罗马数字 | III |
+| `{N:r}` | 小写罗马数字 | iii |
+| `{N:A}` | 大写字母 | C |
+| `{N:a}` | 小写字母 | c |
+| `{N:cn}` | 中文数字 | 三 |
+
+N 范围是 1-6，对应标题级别 H1-H6。空模板字符串表示该级标题不添加编号。
+
+### YAML 配置文件格式
+
+```yaml
+h1: "第{1}章 "
+h2: "{1}.{2} "
+h3: "（{3}）"
+h4: ""
+h5: ""
+h6: ""
+start_from: 1
+```
+
+### 常见编号用法示例
+
+```bash
+# 技术文档风格（1/1.1/1.1.1）
+python ${SKILL_DIR}/scripts/docx_structure.py doc.docx numbering add \
+    --h1 "{1} " --h2 "{1}.{2} " --h3 "{1}.{2}.{3} "
+
+# 中文章节风格（第1章/1.1/（1））
+python ${SKILL_DIR}/scripts/docx_structure.py doc.docx numbering add \
+    --h1 "第{1}章 " --h2 "{1}.{2} " --h3 "（{3}）"
+
+# 学术风格（I/A/1/a）
+python ${SKILL_DIR}/scripts/docx_structure.py doc.docx numbering add \
+    --h1 "{1:R} " --h2 "{2:A} " --h3 "{3} " --h4 "{4:a} "
+
+# 保存当前配置为模板
+python ${SKILL_DIR}/scripts/docx_structure.py doc.docx numbering add \
+    --h1 "第{1}章 " --h2 "{1}.{2} " --save-config chinese_chapter.yaml
+
+# 使用保存的配置
+python ${SKILL_DIR}/scripts/docx_structure.py doc.docx numbering add \
+    --config chinese_chapter.yaml
+```
