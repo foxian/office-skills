@@ -55,6 +55,77 @@ def generate_diff(path1, path2):
     diff = difflib.unified_diff(texts1, texts2, lineterm='', n=0)
     return '\n'.join(diff)
 
+
+def compare_tables(doc1, doc2) -> str:
+    """
+    对比两个文档的表格内容（按单元格文本）。
+    返回 Markdown 格式的 '## Tables' 章节字符串；无表格时返回空字符串。
+    """
+    tables1 = doc1.tables
+    tables2 = doc2.tables
+    max_tables = max(len(tables1), len(tables2))
+
+    if max_tables == 0:
+        return ""
+
+    lines = ["## Tables", ""]
+
+    for t_idx in range(max_tables):
+        if t_idx >= len(tables1):
+            # 文档2 新增的表格
+            t2 = tables2[t_idx]
+            lines.append(f"### t{t_idx} [新增, {len(t2.columns)}×{len(t2.rows)}]")
+            lines.append("+ 整个表格为新增")
+            lines.append("")
+            continue
+        if t_idx >= len(tables2):
+            # 文档1 有但文档2 删除的表格
+            t1 = tables1[t_idx]
+            lines.append(f"### t{t_idx} [删除, {len(t1.columns)}×{len(t1.rows)}]")
+            lines.append("- 整个表格被删除")
+            lines.append("")
+            continue
+
+        t1 = tables1[t_idx]
+        t2 = tables2[t_idx]
+        rows1 = t1.rows
+        rows2 = t2.rows
+        max_rows = max(len(rows1), len(rows2))
+        cell_diffs = []
+
+        for r_idx in range(max_rows):
+            if r_idx >= len(rows1) or r_idx >= len(rows2):
+                cell_diffs.append(
+                    f"- 行数不同：文档1 {len(rows1)} 行，文档2 {len(rows2)} 行"
+                )
+                break
+            cells1 = rows1[r_idx].cells
+            cells2 = rows2[r_idx].cells
+            max_cols = max(len(cells1), len(cells2))
+            for c_idx in range(max_cols):
+                if c_idx >= len(cells1) or c_idx >= len(cells2):
+                    cell_diffs.append(
+                        f"- [t{t_idx}r{r_idx}] 列数不同：文档1 {len(cells1)} 列，文档2 {len(cells2)} 列"
+                    )
+                    break
+                text1 = cells1[c_idx].text
+                text2 = cells2[c_idx].text
+                if text1 != text2:
+                    cell_diffs.append(
+                        f'- [t{t_idx}r{r_idx}c{c_idx}] "{text1}" → "{text2}"'
+                    )
+
+        lines.append(
+            f"### t{t_idx} ({len(t1.columns)}×{len(t1.rows)})"
+        )
+        if cell_diffs:
+            lines.extend(cell_diffs)
+        else:
+            lines.append("（无变更）")
+        lines.append("")
+
+    return "\n".join(lines)
+
 def align_paragraphs(blocks1: List[ParagraphBlock], blocks2: List[ParagraphBlock]) -> List[tuple]:
     """
     Align paragraphs between two documents.
@@ -193,8 +264,20 @@ def generate_rich_diff(path1: str, path2: str, context: int = 1) -> str:
         else:
             diff_results.append(compute_field_diff(b1, b2))
 
-    # Format report
-    return format_diff_report(diff_results, original=path1, modified=path2, context=context, include_same=context > 0)
+    # Format paragraph report
+    para_report = format_diff_report(
+        diff_results, original=path1, modified=path2,
+        context=context, include_same=context > 0
+    )
+
+    # Format table report
+    d1 = docx.Document(path1)
+    d2 = docx.Document(path2)
+    table_report = compare_tables(d1, d2)
+
+    if table_report:
+        return para_report + "\n\n" + table_report
+    return para_report
 
 
 if __name__ == "__main__":
