@@ -15,7 +15,6 @@ description: >
 
 | Script | Purpose |
 |--------|---------|
-| `${SKILL_DIR}/scripts/md_to_docx.py` | Convert Markdown to DOCX with format templates |
 | `${SKILL_DIR}/scripts/docx_reader.py` | Read DOCX, output rich-text Markdown with paragraph IDs |
 | `${SKILL_DIR}/scripts/docx_editor.py` | Execute JSON DSL operations on DOCX |
 | `${SKILL_DIR}/scripts/docx_diff.py` | Compare before/after DOCX, generate diff report |
@@ -29,7 +28,6 @@ description: >
 | Type | Syntax | Example |
 |------|--------|---------|
 | JSON rules | `--template json:name` | `--template json:formal` |
-| DOCX styles | `--template docx:file.docx` | `--template docx:~/template.docx` |
 
 Available JSON templates: `default`, `formal`, `casual`
 
@@ -39,35 +37,7 @@ See `${SKILL_DIR}/references/edit-ops.md` for complete DSL specification.
 
 ---
 
-## Workflow 1: Create Mode (从零创建)
-
-> For creating new documents from scratch.
-
-### Step 1: Outline Discussion
-
-Discuss document structure and direction with user.
-
-### Step 2: AI Writing
-
-Generate `draft.md` with standard Markdown content.
-
-### Step 3: Review Iteration
-
-User and AI iterate on Markdown content directly.
-
-### Step 4: Convert to DOCX
-
-```bash
-python ${SKILL_DIR}/scripts/md_to_docx.py draft.md output.docx --template json:formal
-```
-
-### Step 5: Micro-adjust (if needed)
-
-Switch to Edit Mode for fine-tuning.
-
----
-
-## Workflow 2: Edit Mode (修改文档)
+## Workflow 1: Edit Mode (修改文档)
 
 > For editing existing documents.
 
@@ -110,7 +80,7 @@ python ${SKILL_DIR}/scripts/docx_diff.py document.docx document_modified.docx
 
 ---
 
-## Workflow 3: Style Transfer (样式迁移)
+## Workflow 2: Style Transfer (样式迁移)
  
 > 学习源模板文档的排版格式风格（包含段落格式与表格样式），应用到目标草稿文档。
  
