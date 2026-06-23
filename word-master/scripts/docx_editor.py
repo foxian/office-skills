@@ -1,5 +1,6 @@
 import docx
 import json
+import re
 import shutil
 import sys
 import os
@@ -842,6 +843,78 @@ def _apply_table_style(doc, params):
                         _apply_set_font(paragraph, font_params)
 
 
+def _parse_cell_target(target: str):
+    """
+    解析 'tNrNcN' 格式的单元格 target，返回 (table_idx, row_idx, col_idx)。
+    格式非法时抛出 ValueError；索引越界时由调用方抛出 IndexError。
+    """
+    m = re.fullmatch(r't(\d+)r(\d+)c(\d+)', target)
+    if not m:
+        raise ValueError(
+            f"Invalid cell target: {target!r}. Expected format: tNrNcN (e.g. t0r1c2)"
+        )
+    return int(m.group(1)), int(m.group(2)), int(m.group(3))
+
+
+def _apply_replace_cell_text(doc, op):
+    """
+    replace_cell_text: 在指定单元格内执行文本替换。
+    op 必须包含: target (tNrNcN), find (str), replace (str)
+    """
+    t_idx, r_idx, c_idx = _parse_cell_target(op['target'])
+    tables = doc.tables
+    if t_idx >= len(tables):
+        raise IndexError(
+            f"Table index {t_idx} out of range (document has {len(tables)} table(s))"
+        )
+    rows = tables[t_idx].rows
+    if r_idx >= len(rows):
+        raise IndexError(
+            f"Row index {r_idx} out of range (table t{t_idx} has {len(rows)} row(s))"
+        )
+    cells = rows[r_idx].cells
+    if c_idx >= len(cells):
+        raise IndexError(
+            f"Col index {c_idx} out of range (row t{t_idx}r{r_idx} has {len(cells)} cell(s))"
+        )
+    cell = cells[c_idx]
+    find_txt = op['find']
+    repl_txt = op['replace']
+    for para in cell.paragraphs:
+        _replace_text_in_runs(para, find_txt, repl_txt)
+
+
+def _apply_rewrite_cell(doc, op):
+    """
+    rewrite_cell: 整体重写指定单元格的纯文本内容。
+    op 必须包含: target (tNrNcN), content (str)
+    """
+    t_idx, r_idx, c_idx = _parse_cell_target(op['target'])
+    tables = doc.tables
+    if t_idx >= len(tables):
+        raise IndexError(
+            f"Table index {t_idx} out of range (document has {len(tables)} table(s))"
+        )
+    rows = tables[t_idx].rows
+    if r_idx >= len(rows):
+        raise IndexError(
+            f"Row index {r_idx} out of range (table t{t_idx} has {len(rows)} row(s))"
+        )
+    cells = rows[r_idx].cells
+    if c_idx >= len(cells):
+        raise IndexError(
+            f"Col index {c_idx} out of range (row t{t_idx}r{r_idx} has {len(cells)} cell(s))"
+        )
+    cell = cells[c_idx]
+    # 清空所有段落后写入新内容
+    for para in cell.paragraphs:
+        para.text = ''
+    if cell.paragraphs:
+        cell.paragraphs[0].text = op['content']
+    else:
+        cell.add_paragraph(op['content'])
+
+
 def _backup_file(filepath):
     """Create a .bak backup of the original file before modifying."""
     bak_path = filepath + '.bak'
@@ -906,6 +979,10 @@ def apply_operations(filepath, ops, outpath=None):
             _apply_set_page_setup(doc, op)
         elif op['op'] == 'update_style_definition':
             _apply_update_style_definition(doc, op)
+        elif op['op'] == 'replace_cell_text':
+            _apply_replace_cell_text(doc, op)
+        elif op['op'] == 'rewrite_cell':
+            _apply_rewrite_cell(doc, op)
 
     doc.save(outpath)
 
