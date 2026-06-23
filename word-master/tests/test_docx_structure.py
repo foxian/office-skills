@@ -250,3 +250,36 @@ def test_remove_no_prefix_unchanged(tmp_path):
     cmd_numbering_remove(docx_path)
 
     assert docx.Document(docx_path).paragraphs[0].text == "引言"
+
+
+import subprocess
+
+
+def test_cli_add_via_argv(tmp_path):
+    """python docx_structure.py doc.docx numbering add --h1 "{1} " 跑通。"""
+    doc = docx.Document()
+    doc.add_heading("引言", level=1)
+    docx_path = _save_doc(tmp_path, doc)
+    script = os.path.join(os.path.dirname(__file__), '..', 'scripts', 'docx_structure.py')
+
+    result = subprocess.run(
+        [sys.executable, script, docx_path, "numbering", "add", "--h1", "{1} "],
+        capture_output=True, text=True,
+    )
+    assert result.returncode == 0, "stderr: " + result.stderr
+    assert docx.Document(docx_path).paragraphs[0].text == "1 引言"
+
+
+def test_cli_remove_via_argv(tmp_path):
+    """numbering remove 跑通。"""
+    doc = docx.Document()
+    doc.add_heading("1 引言", level=1)
+    docx_path = _save_doc(tmp_path, doc)
+    script = os.path.join(os.path.dirname(__file__), '..', 'scripts', 'docx_structure.py')
+
+    result = subprocess.run(
+        [sys.executable, script, docx_path, "numbering", "remove"],
+        capture_output=True, text=True,
+    )
+    assert result.returncode == 0, "stderr: " + result.stderr
+    assert docx.Document(docx_path).paragraphs[0].text == "引言"

@@ -120,3 +120,75 @@ def cmd_numbering_remove(docx_path, output_path=None):
             continue
         para.runs[0].text = _strip_prefix(para.runs[0].text)
     _save_docx(doc, docx_path, output_path)
+
+
+def _resolve_templates(args):
+    """
+    合并 config 文件与 CLI 参数，得到最终 level_templates dict。
+    优先级: config[1..6] < --h1..--h6
+    """
+    level_templates = {i: None for i in range(1, 7)}
+    start_from = 1
+
+    if args.config:
+        cfg = load_config(args.config)
+        for i in range(1, 7):
+            level_templates[i] = cfg[i]
+        start_from = cfg.get("start_from", 1)
+
+    for i in range(1, 7):
+        cli_val = getattr(args, "h" + str(i))
+        if cli_val is not None:
+            level_templates[i] = cli_val
+
+    if args.start_from is not None:
+        start_from = args.start_from
+
+    return level_templates, start_from
+
+
+def main():
+    import argparse
+    parser = argparse.ArgumentParser(description="DOCX 标题编号管理")
+    parser.add_argument("input", help="输入 DOCX 文件路径")
+    parser.add_argument("action", choices=["numbering"], help="操作类型")
+    parser.add_argument("subaction", choices=["add", "remove"], help="子操作")
+    parser.add_argument("-o", "--output", help="输出文件路径")
+    parser.add_argument("--config", help="编号配置文件 (YAML)")
+    parser.add_argument("--save-config", dest="save_config",
+                        help="保存编号配置到 YAML 文件")
+    parser.add_argument("--start-from", type=int, default=None, dest="start_from",
+                        help="h1 起始编号")
+    for i in range(1, 7):
+        parser.add_argument("--h" + str(i), help="第 " + str(i) + " 级编号模板")
+
+    args = parser.parse_args()
+
+    if args.action == "numbering":
+        if args.subaction == "add":
+            if args.config and args.save_config:
+                parser.error("--config 和 --save-config 不能同时使用")
+            level_templates, start_from = _resolve_templates(args)
+            cli_h = any(getattr(args, "h" + str(i)) for i in range(1, 7))
+            if not (cli_h or args.config):
+                parser.error("需要 --h1..--h6 或 --config 参数")
+            if not any(v for v in level_templates.values()):
+                parser.error("至少需要为一个级别提供模板")
+
+            if args.save_config:
+                cfg = dict(level_templates)
+                cfg["start_from"] = start_from
+                save_config(args.save_config, cfg)
+                print("配置已保存到: " + args.save_config)
+                return
+
+            cmd_numbering_add(
+                args.input, level_templates, start_from,
+                output_path=args.output, save_config_path=None,
+            )
+        elif args.subaction == "remove":
+            cmd_numbering_remove(args.input, output_path=args.output)
+
+
+if __name__ == "__main__":
+    main()
