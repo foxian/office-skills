@@ -36,6 +36,7 @@ def _detect_heading_level(paragraph):
 _NUMBER_PREFIX_RE = re.compile(
     r"^("
     r"第[\d]+章\s*"
+    r"|第[零一二三四五六七八九十百千]+章\s*"
     r"|[\d]+[、，]\s*"
     r"|（[\d]+）\s*"
     r"|[IVXLCDM]+\s+"
@@ -43,7 +44,6 @@ _NUMBER_PREFIX_RE = re.compile(
     r"|[A-Z]\s+"
     r"|[a-z]\s+"
     r"|[\d]+(?:\.[\d]+)*\.?\s+"
-    r"|[零一二三四五六七八九十百千]+章\s*"
     r")"
 )
 
@@ -103,3 +103,20 @@ def cmd_numbering_add(docx_path, level_templates, start_from=1,
         cfg = dict(level_templates)
         cfg["start_from"] = start_from
         save_config(save_config_path, cfg)
+
+
+def cmd_numbering_remove(docx_path, output_path=None):
+    """
+    移除 docx 所有标题段落的编号前缀。
+
+    output_path: 给定则输出到新文件；None 则覆盖原文件并生成 .bak。
+    策略 B：只改 run[0].text，其余 run 不动。
+    """
+    doc = docx.Document(docx_path)
+    for para in doc.paragraphs:
+        if _detect_heading_level(para) is None:
+            continue
+        if not para.runs:
+            continue
+        para.runs[0].text = _strip_prefix(para.runs[0].text)
+    _save_docx(doc, docx_path, output_path)

@@ -203,3 +203,50 @@ def test_save_config_writes_yaml(tmp_path):
     assert loaded[1] == "第{1}章 "
     assert loaded[2] == "{1}.{2} "
     assert loaded["start_from"] == 1
+
+
+from docx_structure import cmd_numbering_remove
+
+
+def test_remove_strips_decimal_prefix(tmp_path):
+    """1.1 标题 → 标题。"""
+    doc = docx.Document()
+    doc.add_heading("1.1 标题", level=2)
+    docx_path = _save_doc(tmp_path, doc)
+
+    cmd_numbering_remove(docx_path)
+
+    assert docx.Document(docx_path).paragraphs[0].text == "标题"
+
+
+def test_remove_strips_chinese_chapter(tmp_path):
+    """第一章 引言 → 引言（docx 侧独有，md 侧不覆盖）。"""
+    doc = docx.Document()
+    doc.add_heading("第一章 引言", level=1)
+    docx_path = _save_doc(tmp_path, doc)
+
+    cmd_numbering_remove(docx_path)
+
+    assert docx.Document(docx_path).paragraphs[0].text == "引言"
+
+
+def test_remove_strips_roman(tmp_path):
+    """III 标题 → 标题。"""
+    doc = docx.Document()
+    doc.add_heading("III 标题", level=1)
+    docx_path = _save_doc(tmp_path, doc)
+
+    cmd_numbering_remove(docx_path)
+
+    assert docx.Document(docx_path).paragraphs[0].text == "标题"
+
+
+def test_remove_no_prefix_unchanged(tmp_path):
+    """无前缀的标题文本不变。"""
+    doc = docx.Document()
+    doc.add_heading("引言", level=1)
+    docx_path = _save_doc(tmp_path, doc)
+
+    cmd_numbering_remove(docx_path)
+
+    assert docx.Document(docx_path).paragraphs[0].text == "引言"
